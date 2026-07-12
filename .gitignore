@@ -1,11 +1,13 @@
 # Python
 __pycache__/
 *.py[cod]
+*.egg-info/
 .venv/
 venv/
 
 # Data, models and local caches
 data/
+work/
 artifacts/
 models/
 cache/
