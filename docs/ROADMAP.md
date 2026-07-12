@@ -4,7 +4,7 @@ This roadmap is intentionally gated. A later stage does not start merely because
 
 ## Phase 0 — Research foundation
 
-**Status:** Complete
+**Status:** Complete with documented provider exceptions
 
 - [x] Define the v1 research boundary and non-goals
 - [x] Define observed, inferred, and simulated evidence classes
@@ -15,12 +15,12 @@ This roadmap is intentionally gated. A later stage does not start merely because
 
 **Target:** Weeks 1–2
 
-- [ ] Select one dry, one Safety Car, and one changing-condition historical race
-- [ ] Create source and schema registry
-- [ ] Implement reproducible ingestion and local cache configuration
-- [ ] Build a per-lap race-state table
-- [ ] Replay tyre, stint, pit, position, and race-control timelines
-- [ ] Define data-quality tests and missing-data policy
+- [x] Select one dry, one Safety Car, and one changing-condition historical race
+- [x] Create source and schema registry
+- [x] Implement reproducible ingestion and local cache configuration
+- [x] Build a per-lap race-state table
+- [x] Download and replay tyre, stint, pit, position, and race-control timelines
+- [x] Define data-quality tests and missing-data policy
 
 **Exit criterion:** the three selected race replays are independently inspectable and match published session data within documented tolerances.
 
