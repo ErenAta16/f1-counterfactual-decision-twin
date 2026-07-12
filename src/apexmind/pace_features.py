@@ -112,3 +112,48 @@ def build_pace_design_matrix(
     design = pd.DataFrame(feature_columns, index=laps_with_delta.index)
     target = laps_with_delta["pace_delta_seconds"]
     return design, target, feature_names
+
+
+OUTLIER_MODIFIED_Z_THRESHOLD = 3.5
+
+
+def remove_pace_outliers(
+    laps_with_delta: pd.DataFrame, *, threshold: float = OUTLIER_MODIFIED_Z_THRESHOLD
+) -> pd.DataFrame:
+    """Drop laps whose pace delta is a robust statistical outlier in its own group.
+
+    Uses the modified z-score (Iglewicz and Hoaglin, 1993):
+    ``0.6745 * (x - median) / MAD``, with the conventional threshold of 3.5,
+    grouped by (benchmark, session, compound). Grouping by compound rather
+    than by individual driver is deliberate: a single driver rarely has
+    enough green-flag laps on one compound in one session for a stable
+    median and MAD.
+
+    This step exists because of a concrete finding, not a generic hygiene
+    pass. Green-flag laps (track status "1") early in the Dutch GP 2023
+    benchmark, run while the track was still drying after rain, are 5 to 40
+    seconds slower than that compound's settled pace, even though FastF1's
+    track-status codes have no separate "damp/evolving" state to flag them.
+    Left in, they inflated that benchmark's SOFT-compound pace variance from
+    roughly 1.1s to 6.7s of standard deviation and were the direct cause of
+    the over-wide, uncalibrated predictive intervals in the first Phase 2
+    evaluation (see ``docs/PACE_MODEL.md``). The same threshold applied to
+    every other benchmark and compound in this project removes a comparably
+    small share of laps (0-11%), which is why it is used here rather than a
+    benchmark-specific rule.
+    """
+
+    group_columns = ["benchmark_id", "session_name", "compound"]
+    grouped = laps_with_delta.groupby(group_columns)["pace_delta_seconds"]
+    median = grouped.transform("median")
+    absolute_deviation = (laps_with_delta["pace_delta_seconds"] - median).abs()
+    mad = absolute_deviation.groupby(
+        [laps_with_delta[column] for column in group_columns]
+    ).transform("median")
+
+    # A zero MAD means every lap in the group already has the same pace
+    # delta; there is nothing to flag as an outlier, so those rows are kept
+    # rather than divided by zero.
+    modified_z = 0.6745 * (laps_with_delta["pace_delta_seconds"] - median) / mad.replace(0, pd.NA)
+    keep = modified_z.abs().le(threshold).fillna(False) | mad.eq(0)
+    return laps_with_delta.loc[keep].reset_index(drop=True)

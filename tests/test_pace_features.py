@@ -5,6 +5,7 @@ from apexmind.pace_features import (
     PaceFeatureError,
     add_pace_delta,
     build_pace_design_matrix,
+    remove_pace_outliers,
     select_green_flag_laps,
 )
 
@@ -116,3 +117,69 @@ def test_build_pace_design_matrix_partitions_by_compound() -> None:
     assert design["compound_HARD"].sum() == 0
     assert (design["tyre_life_SOFT"] == with_delta["tyre_life"].to_numpy()).all()
     assert len(target) == len(with_delta)
+
+
+def _laps_with_one_outlier() -> pd.DataFrame:
+    rows = []
+    for driver, base in (("AAA", 90.0), ("BBB", 90.2), ("CCC", 89.8)):
+        for lap in range(1, 9):
+            rows.append(
+                dict(
+                    benchmark_id="bahrain-2024",
+                    session_name="Race",
+                    driver=driver,
+                    track_status="1",
+                    is_pit_in_lap=False,
+                    is_pit_out_lap=False,
+                    is_accurate=True,
+                    is_deleted=False,
+                    lap_time_seconds=base + (lap % 3) * 0.05,
+                    tyre_life=float(lap),
+                    compound="SOFT",
+                )
+            )
+    # One lap far outside the settled pace, e.g. a damp-track lap that
+    # nonetheless carries a green track-status flag.
+    rows.append(
+        dict(
+            benchmark_id="bahrain-2024",
+            session_name="Race",
+            driver="AAA",
+            track_status="1",
+            is_pit_in_lap=False,
+            is_pit_out_lap=False,
+            is_accurate=True,
+            is_deleted=False,
+            lap_time_seconds=130.0,
+            tyre_life=9.0,
+            compound="SOFT",
+        )
+    )
+    return pd.DataFrame(rows)
+
+
+def test_remove_pace_outliers_drops_extreme_lap_but_keeps_settled_pace() -> None:
+    with_delta = add_pace_delta(select_green_flag_laps(_laps_with_one_outlier()))
+
+    filtered = remove_pace_outliers(with_delta)
+
+    assert len(filtered) == len(with_delta) - 1
+    assert filtered["pace_delta_seconds"].max() < 5.0
+    assert "compound" in filtered.columns
+    assert "benchmark_id" in filtered.columns
+
+
+def test_remove_pace_outliers_keeps_identical_laps_when_mad_is_zero() -> None:
+    identical = pd.DataFrame(
+        {
+            "benchmark_id": ["bahrain-2024"] * 5,
+            "session_name": ["Race"] * 5,
+            "driver": ["AAA"] * 5,
+            "compound": ["SOFT"] * 5,
+            "pace_delta_seconds": [1.0, 1.0, 1.0, 1.0, 1.0],
+        }
+    )
+
+    filtered = remove_pace_outliers(identical)
+
+    assert len(filtered) == 5
