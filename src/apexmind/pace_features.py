@@ -86,10 +86,8 @@ def add_pace_delta(green_flag_laps: pd.DataFrame) -> pd.DataFrame:
     return eligible
 
 
-def build_pace_design_matrix(
-    laps_with_delta: pd.DataFrame,
-) -> tuple[pd.DataFrame, pd.Series, tuple[str, ...]]:
-    """Build a compound-partitioned design matrix for the Bayesian pace model.
+def build_pace_feature_matrix(compound: pd.Series, tyre_life: pd.Series) -> pd.DataFrame:
+    """Build the compound-partitioned feature matrix shared by fitting and prediction.
 
     Each compound in ``COMPOUND_CATEGORIES`` gets its own intercept-style
     indicator column and its own tyre-life slope column. This lets the model
@@ -99,17 +97,29 @@ def build_pace_design_matrix(
     offset, no degradation" instead of extrapolating from nothing.
     """
 
+    feature_columns: dict[str, pd.Series] = {}
+    for category in COMPOUND_CATEGORIES:
+        indicator = (compound == category).astype(float)
+        feature_columns[f"compound_{category}"] = indicator
+        feature_columns[f"tyre_life_{category}"] = indicator * tyre_life
+    return pd.DataFrame(feature_columns, index=compound.index)
+
+
+def build_pace_design_matrix(
+    laps_with_delta: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.Series, tuple[str, ...]]:
+    """Build the design matrix and target used to fit the Bayesian pace model.
+
+    See ``build_pace_feature_matrix`` for the feature layout. The simulator
+    (``src/apexmind/simulator.py``) calls that function directly when it
+    needs the same feature layout for laps that have no observed target yet.
+    """
+
     if laps_with_delta.empty:
         raise PaceFeatureError("Cannot build a design matrix from an empty table.")
 
-    feature_columns: dict[str, pd.Series] = {}
-    for compound in COMPOUND_CATEGORIES:
-        indicator = (laps_with_delta["compound"] == compound).astype(float)
-        feature_columns[f"compound_{compound}"] = indicator
-        feature_columns[f"tyre_life_{compound}"] = indicator * laps_with_delta["tyre_life"]
-
-    feature_names = tuple(feature_columns.keys())
-    design = pd.DataFrame(feature_columns, index=laps_with_delta.index)
+    design = build_pace_feature_matrix(laps_with_delta["compound"], laps_with_delta["tyre_life"])
+    feature_names = tuple(design.columns)
     target = laps_with_delta["pace_delta_seconds"]
     return design, target, feature_names
 
