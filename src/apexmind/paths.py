@@ -15,6 +15,7 @@ class DataPaths:
     manifests: Path
     quality_reports: Path
     evaluation_reports: Path
+    simulation_reports: Path
 
     @classmethod
     def from_root(cls, root: Path) -> "DataPaths":
@@ -26,6 +27,7 @@ class DataPaths:
             manifests=root / "manifests",
             quality_reports=root / "quality",
             evaluation_reports=root / "evaluation",
+            simulation_reports=root / "simulation",
         )
 
     def create(self) -> None:
@@ -37,6 +39,7 @@ class DataPaths:
             self.manifests,
             self.quality_reports,
             self.evaluation_reports,
+            self.simulation_reports,
         ):
             directory.mkdir(parents=True, exist_ok=True)
 
