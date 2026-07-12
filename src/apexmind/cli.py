@@ -31,6 +31,8 @@ from apexmind.pace_model import fit_bayesian_pace_model, predict
 from apexmind.paths import DataPaths, default_data_root
 from apexmind.quality import write_quality_report
 from apexmind.race_state import build_lap_state, validate_lap_state
+from apexmind.safety_car import SafetyCarScenario, extract_safety_car_episodes
+from apexmind.simulator import Stint, StrategyPlan, run_monte_carlo, summarize_simulations
 
 # The 2023 races are the training history; the 2024 race is the unseen
 # "future" hold-out. See docs/PACE_MODEL.md for the rationale.
@@ -65,6 +67,38 @@ def _parser() -> argparse.ArgumentParser:
         help=f"benchmark race to hold out as the test set (default: {DEFAULT_HOLDOUT_BENCHMARK})",
     )
     evaluate.add_argument(
+        "--data-dir",
+        type=Path,
+        default=default_data_root(),
+        help="local, untracked root containing previously ingested lap-state artefacts",
+    )
+
+    simulate = subparsers.add_parser(
+        "simulate",
+        help="run a Monte Carlo comparison of example candidate strategies for one benchmark",
+    )
+    simulate.add_argument(
+        "--reference-benchmark",
+        choices=[benchmark.identifier for benchmark in BENCHMARK_RACES],
+        default=DEFAULT_HOLDOUT_BENCHMARK,
+        help=f"benchmark whose lap count, pace baseline, and pit loss anchor the simulated race "
+        f"(default: {DEFAULT_HOLDOUT_BENCHMARK})",
+    )
+    simulate.add_argument(
+        "--n-simulations",
+        type=int,
+        default=2000,
+        help="number of Monte Carlo draws per strategy (default: 2000)",
+    )
+    simulate.add_argument(
+        "--seed", type=int, default=0, help="random seed for reproducibility (default: 0)"
+    )
+    simulate.add_argument(
+        "--no-safety-car",
+        action="store_true",
+        help="disable the declared Safety Car scenario and simulate green-flag conditions only",
+    )
+    simulate.add_argument(
         "--data-dir",
         type=Path,
         default=default_data_root(),
@@ -204,6 +238,107 @@ def _evaluate(holdout_benchmark_id: str, data_dir: Path) -> int:
     return 0
 
 
+# Two example candidate strategies for the simulate command. This is a
+# deliberately small, fixed demonstration set, not a strategy generator:
+# Phase 4 is where a real candidate-strategy search belongs
+# (docs/PROJECT_PLAN.md, Section 6.4). Stint lengths are re-scaled to each
+# reference benchmark's actual lap count at runtime.
+def _example_strategies(total_laps: int) -> tuple[StrategyPlan, ...]:
+    one_stop_split = total_laps // 2
+    two_stop_first = total_laps // 3
+    two_stop_second = total_laps // 3
+    two_stop_third = total_laps - two_stop_first - two_stop_second
+    return (
+        StrategyPlan(
+            name="1-stop (medium/hard)",
+            stints=(
+                Stint("MEDIUM", one_stop_split),
+                Stint("HARD", total_laps - one_stop_split),
+            ),
+        ),
+        StrategyPlan(
+            name="2-stop (soft/soft/hard)",
+            stints=(
+                Stint("SOFT", two_stop_first),
+                Stint("SOFT", two_stop_second),
+                Stint("HARD", two_stop_third),
+            ),
+        ),
+    )
+
+
+def _simulate(
+    reference_benchmark_id: str, n_simulations: int, seed: int, use_safety_car: bool, data_dir: Path
+) -> int:
+    paths = DataPaths.from_root(data_dir)
+    paths.create()
+
+    all_states = {
+        benchmark.identifier: _load_lap_state(paths, benchmark.identifier)
+        for benchmark in BENCHMARK_RACES
+    }
+    full_state = pd.concat(all_states.values(), ignore_index=True)
+
+    # Fit the pace model on every available benchmark: unlike the Phase 2
+    # evaluation, this command is not measuring generalisation, so there is
+    # no reason to hold a race out.
+    laps_with_delta = pd.concat(
+        [
+            remove_pace_outliers(add_pace_delta(select_green_flag_laps(state)))
+            for state in all_states.values()
+        ],
+        ignore_index=True,
+    )
+    design, target, _ = build_pace_design_matrix(laps_with_delta)
+    posterior = fit_bayesian_pace_model(design, target)
+
+    reference_state = all_states[reference_benchmark_id]
+    reference_laps = laps_with_delta[laps_with_delta["benchmark_id"] == reference_benchmark_id]
+    driver_baseline_seconds = float(reference_laps["pace_baseline_seconds"].median())
+    total_laps = int(reference_state["lap_number"].max())
+
+    pit_loss_table = estimate_pit_loss(full_state)
+    pit_loss_row = pit_loss_table.loc[pit_loss_table["benchmark_id"] == reference_benchmark_id]
+    if pit_loss_row.empty:
+        raise SystemExit(f"No pit-loss estimate available for '{reference_benchmark_id}'.")
+    pit_loss_seconds = float(pit_loss_row["estimated_pit_loss_seconds"].iloc[0])
+
+    safety_car_scenario: SafetyCarScenario | None = None
+    observed_episodes = extract_safety_car_episodes(
+        pd.read_parquet(paths.processed / f"{reference_benchmark_id}-race-control.parquet")
+    )
+    if use_safety_car:
+        safety_car_scenario = SafetyCarScenario()
+
+    strategies = _example_strategies(total_laps)
+    results = run_monte_carlo(
+        strategies,
+        posterior,
+        driver_baseline_seconds=driver_baseline_seconds,
+        pit_loss_seconds=pit_loss_seconds,
+        n_simulations=n_simulations,
+        seed=seed,
+        safety_car_scenario=safety_car_scenario,
+    )
+    summary = summarize_simulations(results)
+
+    report_path = paths.simulation_reports / f"strategy-comparison-{reference_benchmark_id}.json"
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(summary.to_json(orient="records", indent=2) + "\n", encoding="utf-8")
+
+    print(f"Reference benchmark: {reference_benchmark_id} ({total_laps} laps)")
+    print(
+        f"Driver pace baseline: {driver_baseline_seconds:.3f}s/lap; "
+        f"pit loss: {pit_loss_seconds:.3f}s"
+    )
+    print(f"Observed Safety Car/VSC episodes in this race: {observed_episodes}")
+    safety_car_label = "declared default" if use_safety_car else "disabled (green-flag only)"
+    print(f"Safety Car scenario: {safety_car_label}")
+    print(summary.to_string(index=False))
+    print(f"Report written to {report_path}")
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the ApexMind command-line interface."""
 
@@ -212,6 +347,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _ingest(args.benchmark, args.data_dir)
     if args.command == "evaluate":
         return _evaluate(args.holdout, args.data_dir)
+    if args.command == "simulate":
+        return _simulate(
+            args.reference_benchmark,
+            args.n_simulations,
+            args.seed,
+            not args.no_safety_car,
+            args.data_dir,
+        )
     raise AssertionError(f"Unhandled command: {args.command}")
 
 
