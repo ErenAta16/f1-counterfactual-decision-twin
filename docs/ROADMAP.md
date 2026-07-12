@@ -40,15 +40,17 @@ This roadmap is intentionally gated. A later stage does not start merely because
 
 ## Phase 3 — Counterfactual simulator
 
+**Status:** Complete for v1 scope; Gate C met, with named simplifications
+
 **Target:** Weeks 5–6
 
-- [ ] Model pit loss and traffic interaction
-- [ ] Implement Safety Car and weather scenario generators
-- [ ] Simulate rival policy variants
-- [ ] Add energy/aero sensitivity scenarios as declared assumptions
-- [ ] Run replay and stress-test notebooks
+- [x] Model pit loss and traffic interaction (pit loss from Phase 2's baseline; single-car scope only, no on-track traffic/overtaking model — see `docs/SIMULATOR.md`)
+- [x] Implement Safety Car and weather scenario generators (Safety Car: real episode extraction plus a declared scenario generator; weather remains the Phase 2 compound-choice proxy, not a separate generator)
+- [x] Simulate rival policy variants (via example candidate strategies compared under shared race conditions, not a multi-car field simulation — see scope note in `docs/SIMULATOR.md`)
+- [x] Add energy/aero sensitivity scenarios as declared assumptions
+- [x] Run replay and stress-test notebooks (substituted with a seeded CLI command plus a pytest determinism/plausibility suite; no notebook tooling exists elsewhere in this project — see `docs/SIMULATOR.md`)
 
-**Exit criterion:** simulation behaviours are plausible, inspectable, and reproducible across fixed seeds.
+**Exit criterion:** simulation behaviours are plausible, inspectable, and reproducible across fixed seeds. **Result:** reproducibility verified directly (two separate process runs, same seed, bit-for-bit identical output); plausibility checked against synthetic ground truth and real race distances. Full detail in `docs/SIMULATOR.md`.
 
 ## Phase 4 — Constrained decision engine
 
