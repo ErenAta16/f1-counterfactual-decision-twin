@@ -14,6 +14,7 @@ class DataPaths:
     processed: Path
     manifests: Path
     quality_reports: Path
+    evaluation_reports: Path
 
     @classmethod
     def from_root(cls, root: Path) -> "DataPaths":
@@ -24,12 +25,19 @@ class DataPaths:
             processed=root / "processed",
             manifests=root / "manifests",
             quality_reports=root / "quality",
+            evaluation_reports=root / "evaluation",
         )
 
     def create(self) -> None:
         """Create the local-only storage directories used by the ingest command."""
 
-        for directory in (self.fastf1_cache, self.processed, self.manifests, self.quality_reports):
+        for directory in (
+            self.fastf1_cache,
+            self.processed,
+            self.manifests,
+            self.quality_reports,
+            self.evaluation_reports,
+        ):
             directory.mkdir(parents=True, exist_ok=True)
 
 
