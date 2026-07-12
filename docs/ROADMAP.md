@@ -26,15 +26,17 @@ This roadmap is intentionally gated. A later stage does not start merely because
 
 ## Phase 2 — Predictive foundation
 
+**Status:** Implemented; exit criterion not yet met (Gate B blocked on calibration)
+
 **Target:** Weeks 3–4
 
-- [ ] Implement naive pace and pit baselines
-- [ ] Build probabilistic tyre/pace model
-- [ ] Separate clean-air, traffic, and weather effects
-- [ ] Establish a temporal hold-out protocol
-- [ ] Publish calibration and error report
+- [x] Implement naive pace and pit baselines
+- [x] Build probabilistic tyre/pace model
+- [x] Separate clean-air, traffic, and weather effects (green-flag filter and compound-based weather proxy; see documented limits in `docs/PACE_MODEL.md`)
+- [x] Establish a temporal hold-out protocol
+- [x] Publish calibration and error report
 
-**Exit criterion:** confidence intervals are calibrated and performance is not worse than the best simple baseline.
+**Exit criterion:** confidence intervals are calibrated and performance is not worse than the best simple baseline. **Current result:** the model beats the naive baseline on MAE/RMSE but its predictive intervals are over-wide (50% nominal interval covers 90.6% of held-out laps). Root cause and candidate fixes are recorded in `docs/PACE_MODEL.md`; Phase 3 should wait until this is resolved or consciously accepted.
 
 ## Phase 3 — Counterfactual simulator
 
