@@ -7,6 +7,7 @@ from apexmind.pace_features import (
     add_pace_delta,
     add_race_progress,
     build_pace_design_matrix,
+    exclude_safety_car_restart_laps,
     remove_pace_outliers,
     select_green_flag_laps,
 )
@@ -318,3 +319,77 @@ def test_race_progress_does_not_leak_across_compounds_with_no_shared_evidence() 
 
     assert coeffs["race_progress_SOFT"] == pytest.approx(-4.0, abs=0.3)
     assert coeffs["race_progress_HARD"] == pytest.approx(0.0, abs=0.2)
+
+
+def _race_control(rows: list[dict]) -> pd.DataFrame:
+    frame = pd.DataFrame(rows)
+    frame["event_time"] = pd.to_datetime(frame["event_time"])
+    return frame
+
+
+def test_exclude_safety_car_restart_laps_drops_only_the_sc_restart_lap() -> None:
+    # Real finding (docs/PACE_MODEL.md): the lap right after a Safety Car
+    # peels off is green-flagged but not settled racing pace, because the
+    # whole field is still bunched up from the rolling restart. A VSC
+    # ending has no equivalent physical bunching, so it must not be
+    # touched by this filter.
+    green = pd.DataFrame(
+        {
+            "lap_number": [21, 22, 23, 24, 44, 45, 46],
+            "compound": ["SOFT"] * 7,
+            "tyre_life": [1, 2, 3, 4, 24, 25, 26],
+        }
+    )
+    rc = _race_control(
+        [
+            dict(event_time="2023-01-01T00:00:00", category="SafetyCar",
+                 message="SAFETY CAR DEPLOYED", lap=19),
+            dict(event_time="2023-01-01T00:02:00", category="SafetyCar",
+                 message="SAFETY CAR IN THIS LAP", lap=22),
+            dict(event_time="2023-01-01T00:10:00", category="SafetyCar",
+                 message="VIRTUAL SAFETY CAR DEPLOYED", lap=44),
+            dict(event_time="2023-01-01T00:11:00", category="SafetyCar",
+                 message="VIRTUAL SAFETY CAR ENDING", lap=45),
+        ]
+    )
+
+    filtered = exclude_safety_car_restart_laps(green, rc)
+
+    # Lap 23 (right after the SC ends on lap 22) is dropped; lap 46 (right
+    # after the VSC ends on lap 45) is kept.
+    assert sorted(filtered["lap_number"]) == [21, 22, 24, 44, 45, 46]
+
+
+def _simple_green(lap_numbers: list[int]) -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "lap_number": lap_numbers,
+            "compound": ["SOFT"] * len(lap_numbers),
+            "tyre_life": list(range(1, len(lap_numbers) + 1)),
+        }
+    )
+
+
+def test_exclude_safety_car_restart_laps_is_a_no_op_with_no_episodes() -> None:
+    rc = _race_control(
+        [
+            dict(
+                event_time="2024-01-01T00:00:00",
+                category="Other",
+                message="CHEQUERED FLAG",
+                lap=57,
+            ),
+        ]
+    )
+
+    filtered = exclude_safety_car_restart_laps(_simple_green([1, 2, 3]), rc)
+
+    assert sorted(filtered["lap_number"]) == [1, 2, 3]
+
+
+def test_exclude_safety_car_restart_laps_handles_empty_race_control() -> None:
+    empty_rc = pd.DataFrame(columns=["event_time", "category", "message", "lap"])
+
+    filtered = exclude_safety_car_restart_laps(_simple_green([1, 2, 3]), empty_rc)
+
+    assert sorted(filtered["lap_number"]) == [1, 2, 3]
