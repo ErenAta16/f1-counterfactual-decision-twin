@@ -67,15 +67,28 @@ class DecisionEngineError(ValueError):
     """Raised when the optimiser cannot search a race of the requested shape."""
 
 
-def _expected_pace_table(
-    posterior: PacePosterior, total_laps: int, compounds: tuple[str, ...]
+def _pace_at_lap(
+    posterior: PacePosterior, lap: int, total_laps: int, compounds: tuple[str, ...]
 ) -> dict[str, np.ndarray]:
-    """Posterior-mean pace delta for each compound at each tyre life from 1 to ``total_laps``."""
+    """Posterior-mean pace delta for each compound at tyre life 1..``total_laps``, at this lap.
+
+    Pace now depends on two independent quantities that this function must
+    not collapse into one: tyre life (which resets to 1 at every pit stop)
+    and race progress (``lap / total_laps``, which does not reset — see
+    ``add_race_progress`` in ``pace_features.py`` for why that distinction
+    is what lets the fitted model separate tyre wear from fuel burn-off).
+    Because every DP transition into a given lap shares the same race
+    progress regardless of which state it came from, this is evaluated
+    once per lap rather than once per (compound, tyre life) pair up front.
+    """
 
     tyre_life = pd.Series(range(1, total_laps + 1))
+    race_progress = pd.Series([lap / total_laps] * total_laps)
     table: dict[str, np.ndarray] = {}
     for compound in compounds:
-        design = build_pace_feature_matrix(pd.Series([compound] * total_laps), tyre_life)
+        design = build_pace_feature_matrix(
+            pd.Series([compound] * total_laps), tyre_life, race_progress
+        )
         mean, _variance = predict(posterior, design)
         table[compound] = np.asarray(mean, dtype=float)
     return table
@@ -138,17 +151,20 @@ def optimise_strategies(
     if max_stint_laps is not None and max_stint_laps <= 0:
         raise DecisionEngineError("max_stint_laps must be positive when given.")
 
-    pace_table = _expected_pace_table(posterior, total_laps, compounds)
-
+    lap_one_pace = _pace_at_lap(posterior, 1, total_laps, compounds)
     frontier: dict[_DpState, _DpEntry] = {}
     for compound in compounds:
         state = _DpState(compound, 1, frozenset({compound}))
-        cost = driver_baseline_seconds + float(pace_table[compound][0])
+        cost = driver_baseline_seconds + float(lap_one_pace[compound][0])
         frontier[state] = _DpEntry(cost, None, False)
     history: list[dict[_DpState, _DpEntry]] = [frontier]
 
     for lap in range(2, total_laps + 1):
         next_frontier: dict[_DpState, _DpEntry] = {}
+        # Every transition landing on this lap shares the same race
+        # progress, so the per-compound pace table is looked up once per
+        # lap, not once per (compound, tyre life) combination up front.
+        pace_at_this_lap = _pace_at_lap(posterior, lap, total_laps, compounds)
 
         def _offer(state: _DpState, cost: float, parent: _DpState, pit_stop: bool) -> None:
             existing = next_frontier.get(state)
@@ -158,7 +174,7 @@ def optimise_strategies(
         for state, entry in frontier.items():
             new_tyre_life = state.tyre_life + 1
             if max_stint_laps is None or new_tyre_life <= max_stint_laps:
-                stay_pace = float(pace_table[state.compound][new_tyre_life - 1])
+                stay_pace = float(pace_at_this_lap[state.compound][new_tyre_life - 1])
                 stay_cost = entry.cost + driver_baseline_seconds + stay_pace
                 _offer(_DpState(state.compound, new_tyre_life, state.used), stay_cost, state, False)
 
@@ -167,7 +183,7 @@ def optimise_strategies(
                     entry.cost
                     + pit_loss_seconds
                     + driver_baseline_seconds
-                    + float(pace_table[next_compound][0])
+                    + float(pace_at_this_lap[next_compound][0])
                 )
                 _offer(
                     _DpState(next_compound, 1, state.used | {next_compound}),

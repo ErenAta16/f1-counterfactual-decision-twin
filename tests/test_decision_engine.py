@@ -16,19 +16,26 @@ def _flat_posterior():
     contribution to both the prior and the likelihood is zero.
     """
 
+    # Column order must match build_pace_feature_matrix exactly: compound,
+    # tyre-life, race-progress, interleaved per compound.
     n = 500
     design = pd.DataFrame(
         {
             "compound_SOFT": [1.0] * n,
             "tyre_life_SOFT": list(range(1, n + 1)),
+            "race_progress_SOFT": [0.0] * n,
             "compound_MEDIUM": [0.0] * n,
             "tyre_life_MEDIUM": [0.0] * n,
+            "race_progress_MEDIUM": [0.0] * n,
             "compound_HARD": [0.0] * n,
             "tyre_life_HARD": [0.0] * n,
+            "race_progress_HARD": [0.0] * n,
             "compound_INTERMEDIATE": [0.0] * n,
             "tyre_life_INTERMEDIATE": [0.0] * n,
+            "race_progress_INTERMEDIATE": [0.0] * n,
             "compound_WET": [0.0] * n,
             "tyre_life_WET": [0.0] * n,
+            "race_progress_WET": [0.0] * n,
         }
     )
     target = pd.Series([0.0] * n)
@@ -86,14 +93,19 @@ def test_optimiser_minimises_laps_on_the_more_degrading_compound() -> None:
         {
             "compound_SOFT": is_soft.astype(float),
             "tyre_life_SOFT": is_soft.astype(float) * tyre_life,
+            "race_progress_SOFT": 0.0,
             "compound_MEDIUM": 0.0,
             "tyre_life_MEDIUM": 0.0,
+            "race_progress_MEDIUM": 0.0,
             "compound_HARD": (~is_soft).astype(float),
             "tyre_life_HARD": (~is_soft).astype(float) * tyre_life,
+            "race_progress_HARD": 0.0,
             "compound_INTERMEDIATE": 0.0,
             "tyre_life_INTERMEDIATE": 0.0,
+            "race_progress_INTERMEDIATE": 0.0,
             "compound_WET": 0.0,
             "tyre_life_WET": 0.0,
+            "race_progress_WET": 0.0,
         }
     )
     target = pd.Series(np.where(is_soft, 0.3 * tyre_life, 0.0))
