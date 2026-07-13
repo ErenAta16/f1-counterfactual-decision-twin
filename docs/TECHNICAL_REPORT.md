@@ -126,7 +126,7 @@ above, and `.gitignore` excludes it by default (`work/`, `data/`).
 
 ## What to check, as an independent reviewer
 
-1. Run steps 1-2 above on a fresh clone and confirm 116 tests pass and
+1. Run steps 1-2 above on a fresh clone and confirm 139 tests pass and
    `ruff check` is clean.
 2. Run step 3 and confirm the row counts printed match the table in
    `docs/DATA_FOUNDATION.md`.
