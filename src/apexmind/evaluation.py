@@ -131,6 +131,38 @@ def interval_coverage(
     return float(np.mean(within))
 
 
+def paired_mean_difference_ci(
+    a: np.ndarray, b: np.ndarray, *, confidence: float = 0.95
+) -> tuple[float, float, float]:
+    """Normal-approximation confidence interval for the paired mean of ``a - b``.
+
+    Built for `run_monte_carlo`'s common-random-numbers draws (`docs/SIMULATOR.md`):
+    when ``a`` and ``b`` are two strategies' total race times at the same
+    draw indices, this is a paired comparison, so the correct standard
+    error comes from the variance of the per-draw difference, not from
+    treating the two samples as independent. Returns
+    ``(mean_difference, lower_bound, upper_bound)``. An interval that
+    excludes zero is the "statistically supported advantage" Gate D
+    (`docs/PROJECT_PLAN.md`) asks for.
+    """
+
+    a = np.asarray(a, dtype=float)
+    b = np.asarray(b, dtype=float)
+    if a.shape != b.shape:
+        raise EvaluationError("Paired arrays must have the same shape.")
+    if a.size < 2:
+        raise EvaluationError("At least two paired observations are required.")
+    if not 0 < confidence < 1:
+        raise EvaluationError("confidence must be strictly between 0 and 1.")
+
+    difference = a - b
+    mean_difference = float(np.mean(difference))
+    standard_error = float(np.std(difference, ddof=1) / math.sqrt(difference.size))
+    z = _normal_ppf(0.5 + confidence / 2)
+    margin = z * standard_error
+    return mean_difference, mean_difference - margin, mean_difference + margin
+
+
 def write_calibration_report(
     path: Path,
     *,
