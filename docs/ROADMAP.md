@@ -54,15 +54,17 @@ This roadmap is intentionally gated. A later stage does not start merely because
 
 ## Phase 4 — Constrained decision engine
 
+**Status:** Complete for v1 scope; Gate D met numerically on all three benchmarks, with a named caveat
+
 **Target:** Weeks 7–8
 
-- [ ] Implement legal candidate-strategy generator
-- [ ] Encode relevant FIA constraints with rule-version metadata
-- [ ] Add beam search or dynamic programming optimiser
-- [ ] Compare expected performance and regret to baselines
-- [ ] Decide whether Gate D supports continuation
+- [x] Implement legal candidate-strategy generator (generation and ranking are one dynamic-programming search, not two passes — see `docs/DECISION_ENGINE.md`)
+- [x] Encode relevant FIA constraints with rule-version metadata (Article B6.3.6, FIA 2026 Sporting Regulations Section B Issue 07; the one rule this project's strategy representation can verify — see `docs/regulations/tyre-compound-rule.md`)
+- [x] Add beam search or dynamic programming optimiser (exact DP; the legal state space is small enough that an exact search costs nothing extra over a heuristic)
+- [x] Compare expected performance and regret to baselines (statistically supported on all three benchmarks via a new paired confidence-interval check — see `docs/DECISION_ENGINE.md`)
+- [x] Decide whether Gate D supports continuation
 
-**Exit criterion:** no illegal strategies and a statistically supported advantage in the defined simulation benchmark.
+**Exit criterion:** no illegal strategies and a statistically supported advantage in the defined simulation benchmark. **Result:** met on all three benchmarks — every ranked candidate is legal by construction, and the optimiser's plan beats both fixed example baselines with a 95% confidence interval excluding zero. An unbounded first version of the search was found, during development, to exploit a known pace-model confound (tyre age vs. fuel burn-off, already named in `docs/PACE_MODEL.md`) by extrapolating a stint length far past the training data; fixed by bounding stint length to the longest one actually observed. The fixed version's winning plan still rides that bound on every benchmark, which is carried forward as a named limitation of the underlying pace model, not hidden — full detail in `docs/DECISION_ENGINE.md`.
 
 ## Phase 5 — Evidence interface
 
