@@ -142,7 +142,8 @@ def simulate_race(
         raise SimulatorError("safety_car_pit_loss_discount must be between 0 and 1.")
 
     plan = _lap_plan(strategy)
-    design = build_pace_feature_matrix(plan["compound"], plan["tyre_life"])
+    race_progress = plan["lap_number"] / strategy.total_laps
+    design = build_pace_feature_matrix(plan["compound"], plan["tyre_life"], race_progress)
     mean, variance = predict(posterior, design)
     sampled_delta = rng.normal(loc=mean, scale=np.sqrt(variance))
 
@@ -267,7 +268,8 @@ def _simulate_with_fixed_safety_car(
     """
 
     plan = _lap_plan(strategy)
-    design = build_pace_feature_matrix(plan["compound"], plan["tyre_life"])
+    race_progress = plan["lap_number"] / strategy.total_laps
+    design = build_pace_feature_matrix(plan["compound"], plan["tyre_life"], race_progress)
     mean, variance = predict(posterior, design)
     sampled_delta = rng.normal(loc=mean, scale=np.sqrt(variance))
 

@@ -19,18 +19,27 @@ def _near_zero_posterior():
     # (almost) zero and its predictive variance to (almost) zero too, which
     # makes total-race-time arithmetic in these tests exact enough to
     # assert on directly instead of only checking broad plausibility.
+    # Column order must match build_pace_feature_matrix exactly: compound,
+    # tyre-life, race-progress, interleaved per compound -- not grouped by
+    # kind -- since predict() checks design columns against the posterior's
+    # fitted feature_names in order.
     design = pd.DataFrame(
         {
             "compound_SOFT": [1.0] * 500,
             "tyre_life_SOFT": list(range(1, 501)),
+            "race_progress_SOFT": [0.0] * 500,
             "compound_MEDIUM": [0.0] * 500,
             "tyre_life_MEDIUM": [0.0] * 500,
+            "race_progress_MEDIUM": [0.0] * 500,
             "compound_HARD": [0.0] * 500,
             "tyre_life_HARD": [0.0] * 500,
+            "race_progress_HARD": [0.0] * 500,
             "compound_INTERMEDIATE": [0.0] * 500,
             "tyre_life_INTERMEDIATE": [0.0] * 500,
+            "race_progress_INTERMEDIATE": [0.0] * 500,
             "compound_WET": [0.0] * 500,
             "tyre_life_WET": [0.0] * 500,
+            "race_progress_WET": [0.0] * 500,
         }
     )
     target = pd.Series([0.0] * 500)
@@ -76,6 +85,57 @@ def test_simulate_race_is_deterministic_for_a_fixed_seed() -> None:
     )
 
     assert first == second
+
+
+def _fuel_effect_posterior():
+    # Every column zero except race_progress_SOFT, whose true slope is
+    # -2.0 seconds across the full race, to check directly that a nonzero
+    # per-compound race-progress coefficient reaches simulate_race's
+    # lap-time arithmetic rather than being silently ignored.
+    n = 500
+    rng = np.random.default_rng(0)
+    progress = rng.uniform(0, 1, size=n)
+    design = pd.DataFrame(
+        {
+            "compound_SOFT": [1.0] * n,
+            "tyre_life_SOFT": [0.0] * n,
+            "race_progress_SOFT": progress,
+            "compound_MEDIUM": [0.0] * n,
+            "tyre_life_MEDIUM": [0.0] * n,
+            "race_progress_MEDIUM": [0.0] * n,
+            "compound_HARD": [0.0] * n,
+            "tyre_life_HARD": [0.0] * n,
+            "race_progress_HARD": [0.0] * n,
+            "compound_INTERMEDIATE": [0.0] * n,
+            "tyre_life_INTERMEDIATE": [0.0] * n,
+            "race_progress_INTERMEDIATE": [0.0] * n,
+            "compound_WET": [0.0] * n,
+            "tyre_life_WET": [0.0] * n,
+            "race_progress_WET": [0.0] * n,
+        }
+    )
+    target = pd.Series(-2.0 * progress)
+    return fit_bayesian_pace_model(design, target, prior_scale=5.0, prior_rate=1e-6)
+
+
+def test_race_progress_pace_effect_reaches_the_simulator() -> None:
+    posterior = _fuel_effect_posterior()
+    strategy = StrategyPlan(name="one-stint", stints=(Stint("SOFT", 10),))
+
+    result = simulate_race(
+        strategy,
+        posterior,
+        driver_baseline_seconds=100.0,
+        pit_loss_seconds=0.0,
+        rng=np.random.default_rng(0),
+    )
+
+    # race_progress runs 1/10, 2/10, ..., 10/10 across these ten laps; the
+    # expected total is the baseline plus the sum of the fitted -2.0 * progress
+    # term across all ten laps.
+    progress = np.arange(1, 11) / 10
+    expected = 10 * 100.0 + float((-2.0 * progress).sum())
+    assert result.total_race_time_seconds == pytest.approx(expected, abs=0.1)
 
 
 def test_extra_pit_stop_costs_approximately_one_pit_loss() -> None:
