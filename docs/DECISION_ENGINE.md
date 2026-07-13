@@ -1,8 +1,8 @@
 # Constrained Decision Engine — Phase 4 Research Record
 
-**Status:** Implemented for v1 scope; Gate D met numerically on all three
-benchmarks, with an important caveat on what the winning plan's shape
-actually means
+**Status:** Implemented for v1 scope; Gate D met on all three benchmarks
+with credible, non-degenerate winning plans, after a root-cause fix to the
+pace model described below
 
 ## Purpose
 
@@ -55,72 +55,85 @@ afterwards (which does sample from the posterior, and can include the
 declared Safety Car scenario), for the uncertainty-aware half of the
 comparison this planning stage does not attempt.
 
-## A real failure found during development, and its fix
+## A real failure found during development, and its root-cause fix
 
 An early, unbounded version of this search was run against the real
 ingested `bahrain-2024` data and returned a technically legal but not
 credible plan: 56 laps on `SOFT` and a 1-lap `HARD` stint purely to satisfy
 the compound rule. Inspecting the fitted posterior directly explained why:
-`tyre_life_SOFT`'s coefficient is slightly **negative** (-0.0154 s/lap) in
-the model fit on all three benchmarks. This is not a claim that soft tyres
-get faster with age — it is the tyre-age/fuel-burn confound
-`docs/PACE_MODEL.md` already named as an open limitation ("the
+`tyre_life_SOFT`'s coefficient was slightly **negative** (-0.0154 s/lap) in
+the model fit on all three benchmarks. This was not evidence that soft
+tyres get faster with age — it was the tyre-age/fuel-burn confound
+`docs/PACE_MODEL.md` had already named as an open limitation ("the
 `tyre_life` coefficient... should be read as pace change per lap of tyre
 age and race progress combined, not as an isolated tyre-degradation
 rate") showing up as a concrete, unwanted consequence for the first time.
-An unbounded DP takes the posterior mean literally and extrapolates that
-coefficient across a stint length far beyond anything the model was fit on
-— the longest stint actually observed in the training data tops out at 49
-laps of tyre life, not 56.
 
-The fix, `optimise_strategies`'s `max_stint_laps` parameter, is the same
-discipline Phase 3 already applies to the Safety Car case: do not use a
-model outside the range of evidence it was fit on. `apexmind decide`
-computes this bound from the actual training data (the longest tyre life
-observed across every benchmark the posterior was fit on: 49 laps in this
-dataset) rather than an arbitrary constant, and passes it to the search.
+The first response, shipped in an earlier version of this record, was a
+`max_stint_laps` bound: refuse to plan a stint longer than the longest one
+actually observed in training. That was a reasonable safety net, but it
+only contained the symptom — every benchmark's optimal `SOFT` stint still
+pinned to exactly that bound, meaning the search was still trying to run
+soft tyres as long as the cap would legally allow. The actual fix required
+going back into `docs/PACE_MODEL.md`'s pace model itself: adding a
+per-compound `race_progress` covariate (`add_race_progress`,
+`build_pace_feature_matrix`) that lets the model separate a car getting
+faster from fuel burn-off (which does not reset at a pit stop) from a
+tyre getting slower with age (which does). Full detail, including a second
+bug this fix exposed and fixed, is in `docs/PACE_MODEL.md`'s "Second
+iteration" section.
+
+With that fix in place, `tyre_life_SOFT`'s coefficient recovers to +0.0115
+s/lap — positive and physically ordered against `tyre_life_MEDIUM`
+(+0.036) and `tyre_life_HARD` (+0.049) — and the `max_stint_laps` bound,
+still kept in place as defence in depth (the same "do not extrapolate past
+the evidence" discipline Phase 3 applies to Safety Car laps), is no longer
+what the optimiser's chosen plans are pinned against on two of the three
+benchmarks. `optimise_strategies`'s `max_stint_laps` parameter still
+exists and is still computed from the longest tyre life actually observed
+in training, but it is now a safety margin rather than the thing shaping
+the answer.
 
 ## Result after the fix, all three benchmarks (declared Safety Car scenario on, seed 42, 3000 draws)
 
 | Reference benchmark | Optimiser's plan | vs 1-stop (medium/hard) | vs 2-stop (soft/soft/hard) |
 |---|---|---:|---:|
-| `bahrain-2024` (57 laps) | HARD×8 / SOFT×49 | +14.86s [+14.34, +15.39], significant | +45.53s [+44.99, +46.07], significant |
-| `singapore-2023` (62 laps) | HARD×13 / SOFT×49 | +14.87s [+14.30, +15.44], significant | +60.48s [+59.88, +61.08], significant |
-| `dutch-2023` (72 laps) | SOFT×49 / HARD×23 | +14.13s [+13.56, +14.71], significant | +55.50s [+54.94, +56.07], significant |
+| `bahrain-2024` (57 laps) | MEDIUM×20 / SOFT×37 | +13.74s [+13.31, +14.17], significant | +37.76s [+37.35, +38.17], significant |
+| `singapore-2023` (62 laps) | MEDIUM×21 / SOFT×41 | +16.64s [+16.16, +17.13], significant | +54.22s [+53.78, +54.67], significant |
+| `dutch-2023` (72 laps) | MEDIUM×24 / SOFT×48 | +23.49s [+23.01, +23.97], significant | +50.52s [+50.08, +50.96], significant |
 
 Figures are the mean paired advantage in total race time (positive = the
 optimiser's plan is faster), with a 95% confidence interval computed from
 the same paired Monte Carlo draws `run_monte_carlo` already produces
-(common random numbers), via the new `paired_mean_difference_ci` in
+(common random numbers), via `paired_mean_difference_ci` in
 `src/apexmind/evaluation.py`. In every case the interval excludes zero, so
 Gate D's "statistically supported advantage" is met, and every ranked
 candidate is legal by construction.
 
 ## What this result honestly means, and does not mean
 
-The `SOFT` stint pins to the 49-lap bound in **all three** benchmarks, not
-just one — this is a systematic property of the fitted model, not
-benchmark-specific noise. Reading this as "run the softs almost the whole
-race" would be a mistake: it is the search correctly exploiting a pace
-model whose tyre-life coefficient for `SOFT` is confounded with fuel
-burn-off and race progress, bounded only by the longest stint the model
-has any evidence about at all. No car has actually run a 49-lap stint on
-soft tyres in this benchmark set; the bound prevents extrapolation past 49
-laps, but it does not — and could not, without inventing data — prove that
-49 laps behaves the way the model predicts either.
+`bahrain-2024` and `singapore-2023`'s optimal plans (37 and 41 laps on
+`SOFT` out of 57 and 62 total) no longer touch the `max_stint_laps` bound
+at all — a genuinely different, more credible result than before, not
+just a smaller version of the same artifact. `dutch-2023`'s plan (48 laps
+on `SOFT`) sits one lap under its 49-lap bound, which is worth naming
+rather than glossing over: it is closer to the boundary than the other
+two, consistent with `docs/PACE_MODEL.md`'s finding that `dutch-2023`
+remains this project's hardest hold-out even after the fix.
 
-What the result **does** show, credibly: given this project's own pace
-model, an exhaustive legal search reliably beats both fixed example
-strategies by tens of seconds, the margin is consistent across a dry race,
-a Safety Car race, and a changing-conditions race, and every plan involved
-is legal and reproducible. What it does **not** show: that a 49-lap soft
-stint is good race strategy in reality. That gap traces directly back to
-Phase 2's pace model, not to a bug in the search — the DP is doing exactly
-what it was asked to do with the evidence available. Fixing the underlying
-cause (separating tyre degradation from fuel burn-off, which
-`docs/PACE_MODEL.md` already flagged as deferred pending a fuel-load
-signal this project's data source does not currently provide) is carried
-forward as a named risk, not closed here.
+A 37-to-48-lap single stint on soft tyres is still longer than real F1
+strategy typically runs a soft tyre, and that gap has an honest
+explanation rather than a hidden one: `tyre_life_SOFT`'s fitted
+degradation slope (+0.0115 s/lap) is small in absolute terms, a
+characteristic `docs/PACE_MODEL.md` already flagged before Phase 4 began
+("the current pace model's still-modest degradation slopes"). Fixing the
+fuel/tyre confound corrected the *sign* and the *attribution* of that
+coefficient — the search no longer profits from a spurious negative slope
+— but it did not, and could not without more or better data, change the
+underlying fact that a linear, single-regime model fit to this benchmark
+set finds only a modest degradation signal. That is a separate, smaller,
+already-named limitation carried forward, not a new one this fix
+introduced.
 
 ## Scope decisions and their limits
 
@@ -164,7 +177,11 @@ is a hard filter inside the search, verified again by
 `is_legal_strategy` before a candidate is returned), and every baseline is
 also checked and confirmed legal before comparison. The statistical
 advantage is met on all three benchmarks with 95% confidence intervals
-excluding zero. This is treated as meeting the exit criterion for v1
-scope, with the pace-model confound described above carried forward as a
-named, tracked risk rather than a closed question — consistent with how
-Phase 2's own calibration gap was carried forward into Phase 3.
+excluding zero, and — unlike the version of this record shipped before the
+fuel/tyre confound fix — the winning plans are no longer a known model
+artifact stretched to a safety boundary on every benchmark. This is
+treated as meeting the exit criterion for v1 scope. The still-modest
+`SOFT` degradation slope and `dutch-2023`'s persistent difficulty are
+carried forward as named, tracked limitations rather than closed
+questions — consistent with how Phase 2's own calibration gap was carried
+forward into Phase 3.
