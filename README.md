@@ -63,4 +63,4 @@ The initial research data sources are OpenF1, FastF1, and publicly available FIA
 
 ## Licence
 
-No licence has been selected yet. The repository is private while the research protocol, data permissions, and release scope are being established.
+MIT. See [`LICENSE`](LICENSE).
