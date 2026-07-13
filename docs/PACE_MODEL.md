@@ -407,6 +407,26 @@ remain the two open items with a plausible path to improvement. `dutch-2023`'s
 `INTERMEDIATE`/`WET` gap is carried forward as a named, understood, and
 currently unfixable-without-new-data limitation, not a to-do.
 
+## Fifth iteration: testing for non-linear ("cliff") degradation
+
+A production F1 strategy system described in a July 2026 paper reports
+mining non-linear, circuit-compound-specific degradation "cliffs" from
+191k real laps, in contrast to this model's linear-in-tyre-life design.
+Given a finding like that from a much larger corpus, it was checked
+directly against this project's own data rather than assumed either
+way. `bahrain-2024`'s `SOFT` and `HARD` compounds showed a real,
+monotonic in-sample residual trend consistent with accelerating
+degradation (physically plausible — Bahrain is a well-known abrasive
+circuit) — but adding a quadratic tyre-life term and testing it with
+this project's own hold-out protocol made held-out accuracy *worse* on
+two of the three benchmarks, and the one benchmark where it helped
+already has a separately diagnosed, unrelated cause for its accuracy
+gap (the `INTERMEDIATE`-compound issue in the section above). Not
+adopted. Full method and numbers in
+`docs/progress/08-tyre-cliff-investigation.md`; the honest reading is a
+data-volume limit (roughly 2,700 laps here against 191k), not evidence
+that non-linear degradation is physically absent.
+
 ## Reproducing this result
 
 ```powershell
