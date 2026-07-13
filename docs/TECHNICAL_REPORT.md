@@ -77,6 +77,13 @@ not work, not just what does:
 - **The `SOFT` degradation slope is still small.** Fixing the fuel/tyre
   confound corrected its *sign*, not its *magnitude* — a genuine, separate
   limitation of a linear, single-regime model on this data volume.
+- **Non-linear ("cliff") tyre degradation was tested for and not found
+  to generalise.** `bahrain-2024` showed an in-sample pattern consistent
+  with accelerating degradation, but a quadratic term fit from the other
+  two benchmarks made held-out accuracy worse there, not better
+  (`docs/progress/08-tyre-cliff-investigation.md`). Read as a data-volume
+  limit against this project's ~2,700 laps, not as evidence the effect
+  is physically absent.
 - **Explanation faithfulness beyond citation validity.** Phase 5 checks
   that citations point at real evidence and that two safety-critical
   claims are never silently dropped; it does not yet check that every
