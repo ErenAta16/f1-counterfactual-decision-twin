@@ -3,18 +3,22 @@
 from __future__ import annotations
 
 import argparse
+import json
 from collections.abc import Sequence
 from pathlib import Path
+from typing import NamedTuple
 
 import pandas as pd
 
 from apexmind.baselines import estimate_pit_loss, naive_driver_compound_baseline
 from apexmind.benchmarks import BENCHMARK_RACES, get_benchmark
 from apexmind.context import build_race_control_events, build_weather_observations
+from apexmind.decision_engine import SEARCH_COMPOUNDS, optimise_strategies
 from apexmind.evaluation import (
     gaussian_crps,
     interval_coverage,
     mean_absolute_error,
+    paired_mean_difference_ci,
     root_mean_squared_error,
     temporal_holdout_split,
     write_calibration_report,
@@ -31,6 +35,7 @@ from apexmind.pace_model import fit_bayesian_pace_model, predict
 from apexmind.paths import DataPaths, default_data_root
 from apexmind.quality import write_quality_report
 from apexmind.race_state import build_lap_state, validate_lap_state
+from apexmind.regulations import TYRE_COMPOUND_RULE, is_legal_strategy
 from apexmind.safety_car import SafetyCarScenario, extract_safety_car_episodes
 from apexmind.simulator import Stint, StrategyPlan, run_monte_carlo, summarize_simulations
 
@@ -99,6 +104,44 @@ def _parser() -> argparse.ArgumentParser:
         help="disable the declared Safety Car scenario and simulate green-flag conditions only",
     )
     simulate.add_argument(
+        "--data-dir",
+        type=Path,
+        default=default_data_root(),
+        help="local, untracked root containing previously ingested lap-state artefacts",
+    )
+
+    decide = subparsers.add_parser(
+        "decide",
+        help="search legal candidate strategies and compare the best one to fixed baselines",
+    )
+    decide.add_argument(
+        "--reference-benchmark",
+        choices=[benchmark.identifier for benchmark in BENCHMARK_RACES],
+        default=DEFAULT_HOLDOUT_BENCHMARK,
+        help=f"benchmark whose lap count, pace baseline, and pit loss anchor the search "
+        f"(default: {DEFAULT_HOLDOUT_BENCHMARK})",
+    )
+    decide.add_argument(
+        "--top-k",
+        type=int,
+        default=3,
+        help="number of distinct legal candidates the optimiser reports (default: 3)",
+    )
+    decide.add_argument(
+        "--n-simulations",
+        type=int,
+        default=2000,
+        help="number of Monte Carlo draws per strategy for the comparison stage (default: 2000)",
+    )
+    decide.add_argument(
+        "--seed", type=int, default=0, help="random seed for reproducibility (default: 0)"
+    )
+    decide.add_argument(
+        "--no-safety-car",
+        action="store_true",
+        help="disable the declared Safety Car scenario in the comparison stage",
+    )
+    decide.add_argument(
         "--data-dir",
         type=Path,
         default=default_data_root(),
@@ -267,21 +310,26 @@ def _example_strategies(total_laps: int) -> tuple[StrategyPlan, ...]:
     )
 
 
-def _simulate(
-    reference_benchmark_id: str, n_simulations: int, seed: int, use_safety_car: bool, data_dir: Path
-) -> int:
-    paths = DataPaths.from_root(data_dir)
-    paths.create()
+class _ReferenceRaceStats(NamedTuple):
+    posterior: object
+    driver_baseline_seconds: float
+    total_laps: int
+    pit_loss_seconds: float
+    max_observed_tyre_life: int
 
-    all_states = {
-        benchmark.identifier: _load_lap_state(paths, benchmark.identifier)
-        for benchmark in BENCHMARK_RACES
-    }
-    full_state = pd.concat(all_states.values(), ignore_index=True)
 
-    # Fit the pace model on every available benchmark: unlike the Phase 2
-    # evaluation, this command is not measuring generalisation, so there is
-    # no reason to hold a race out.
+def _reference_race_stats(
+    all_states: dict[str, pd.DataFrame],
+    full_state: pd.DataFrame,
+    reference_benchmark_id: str,
+) -> _ReferenceRaceStats:
+    """Fit the pace model on every available benchmark and derive one race's reference figures.
+
+    Shared by `simulate` and `decide`: neither command is measuring
+    generalisation the way the Phase 2 evaluation does, so there is no
+    reason to hold a benchmark out here.
+    """
+
     laps_with_delta = pd.concat(
         [
             remove_pace_outliers(add_pace_delta(select_green_flag_laps(state)))
@@ -302,6 +350,27 @@ def _simulate(
     if pit_loss_row.empty:
         raise SystemExit(f"No pit-loss estimate available for '{reference_benchmark_id}'.")
     pit_loss_seconds = float(pit_loss_row["estimated_pit_loss_seconds"].iloc[0])
+    max_observed_tyre_life = int(laps_with_delta["tyre_life"].max())
+
+    return _ReferenceRaceStats(
+        posterior, driver_baseline_seconds, total_laps, pit_loss_seconds, max_observed_tyre_life
+    )
+
+
+def _simulate(
+    reference_benchmark_id: str, n_simulations: int, seed: int, use_safety_car: bool, data_dir: Path
+) -> int:
+    paths = DataPaths.from_root(data_dir)
+    paths.create()
+
+    all_states = {
+        benchmark.identifier: _load_lap_state(paths, benchmark.identifier)
+        for benchmark in BENCHMARK_RACES
+    }
+    full_state = pd.concat(all_states.values(), ignore_index=True)
+
+    stats = _reference_race_stats(all_states, full_state, reference_benchmark_id)
+    total_laps = stats.total_laps
 
     safety_car_scenario: SafetyCarScenario | None = None
     observed_episodes = extract_safety_car_episodes(
@@ -313,9 +382,9 @@ def _simulate(
     strategies = _example_strategies(total_laps)
     results = run_monte_carlo(
         strategies,
-        posterior,
-        driver_baseline_seconds=driver_baseline_seconds,
-        pit_loss_seconds=pit_loss_seconds,
+        stats.posterior,
+        driver_baseline_seconds=stats.driver_baseline_seconds,
+        pit_loss_seconds=stats.pit_loss_seconds,
         n_simulations=n_simulations,
         seed=seed,
         safety_car_scenario=safety_car_scenario,
@@ -328,13 +397,139 @@ def _simulate(
 
     print(f"Reference benchmark: {reference_benchmark_id} ({total_laps} laps)")
     print(
-        f"Driver pace baseline: {driver_baseline_seconds:.3f}s/lap; "
-        f"pit loss: {pit_loss_seconds:.3f}s"
+        f"Driver pace baseline: {stats.driver_baseline_seconds:.3f}s/lap; "
+        f"pit loss: {stats.pit_loss_seconds:.3f}s"
     )
     print(f"Observed Safety Car/VSC episodes in this race: {observed_episodes}")
     safety_car_label = "declared default" if use_safety_car else "disabled (green-flag only)"
     print(f"Safety Car scenario: {safety_car_label}")
     print(summary.to_string(index=False))
+    print(f"Report written to {report_path}")
+    return 0
+
+
+def _decide(
+    reference_benchmark_id: str,
+    top_k: int,
+    n_simulations: int,
+    seed: int,
+    use_safety_car: bool,
+    data_dir: Path,
+) -> int:
+    paths = DataPaths.from_root(data_dir)
+    paths.create()
+
+    all_states = {
+        benchmark.identifier: _load_lap_state(paths, benchmark.identifier)
+        for benchmark in BENCHMARK_RACES
+    }
+    full_state = pd.concat(all_states.values(), ignore_index=True)
+
+    stats = _reference_race_stats(all_states, full_state, reference_benchmark_id)
+    total_laps = stats.total_laps
+
+    candidates = optimise_strategies(
+        stats.posterior,
+        total_laps=total_laps,
+        driver_baseline_seconds=stats.driver_baseline_seconds,
+        pit_loss_seconds=stats.pit_loss_seconds,
+        top_k=top_k,
+        max_stint_laps=stats.max_observed_tyre_life,
+    )
+    chosen = candidates[0]
+
+    baselines = _example_strategies(total_laps)
+    illegal_baselines = [b.name for b in baselines if not is_legal_strategy(b)]
+
+    safety_car_scenario = SafetyCarScenario() if use_safety_car else None
+    comparison_strategies = (chosen, *baselines)
+    results = run_monte_carlo(
+        comparison_strategies,
+        stats.posterior,
+        driver_baseline_seconds=stats.driver_baseline_seconds,
+        pit_loss_seconds=stats.pit_loss_seconds,
+        n_simulations=n_simulations,
+        seed=seed,
+        safety_car_scenario=safety_car_scenario,
+    )
+    summary = summarize_simulations(results)
+
+    pivoted = results.pivot(
+        index="draw_index", columns="strategy_name", values="total_race_time_seconds"
+    )
+    comparisons = []
+    for baseline in baselines:
+        mean_difference, lower, upper = paired_mean_difference_ci(
+            pivoted[baseline.name].to_numpy(), pivoted[chosen.name].to_numpy()
+        )
+        comparisons.append(
+            {
+                "baseline_name": baseline.name,
+                "mean_advantage_seconds": mean_difference,
+                "95pct_ci_lower_seconds": lower,
+                "95pct_ci_upper_seconds": upper,
+                "statistically_supported_advantage": lower > 0,
+            }
+        )
+
+    report_path = paths.decision_reports / f"decision-{reference_benchmark_id}.json"
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_payload = {
+        "reference_benchmark_id": reference_benchmark_id,
+        "total_laps": total_laps,
+        "driver_baseline_seconds": stats.driver_baseline_seconds,
+        "pit_loss_seconds": stats.pit_loss_seconds,
+        "max_stint_laps": stats.max_observed_tyre_life,
+        "regulation": {
+            "document": TYRE_COMPOUND_RULE.document,
+            "article": TYRE_COMPOUND_RULE.article,
+        },
+        "optimiser_candidates": [
+            {
+                "name": plan.name,
+                "stints": [
+                    {"compound": stint.compound, "lap_count": stint.lap_count}
+                    for stint in plan.stints
+                ],
+            }
+            for plan in candidates
+        ],
+        "chosen_strategy": chosen.name,
+        "monte_carlo_summary": json.loads(summary.to_json(orient="records")),
+        "comparisons_vs_baselines": comparisons,
+    }
+    report_path.write_text(json.dumps(report_payload, indent=2) + "\n", encoding="utf-8")
+
+    print(f"Reference benchmark: {reference_benchmark_id} ({total_laps} laps)")
+    print(
+        f"Driver pace baseline: {stats.driver_baseline_seconds:.3f}s/lap; "
+        f"pit loss: {stats.pit_loss_seconds:.3f}s"
+    )
+    print(f"Encoded rule: {TYRE_COMPOUND_RULE.document}, Article {TYRE_COMPOUND_RULE.article}")
+    if illegal_baselines:
+        print(f"WARNING: baseline strategies failing the compound rule: {illegal_baselines}")
+    else:
+        print("All baseline strategies pass the compound rule (both use two compounds).")
+    print(
+        f"\nOptimiser searched dry compounds {SEARCH_COMPOUNDS} by exact dynamic programming "
+        f"(max {stats.max_observed_tyre_life} laps per stint, the longest observed in training)."
+    )
+    print(f"Top {len(candidates)} legal candidates (expected time, posterior mean, no Safety Car):")
+    for rank, plan in enumerate(candidates, start=1):
+        stint_desc = ", ".join(f"{s.compound}x{s.lap_count}" for s in plan.stints)
+        print(f"  {rank}. {plan.name}: {stint_desc}")
+    print(f"\nMonte Carlo comparison ({n_simulations} draws, seed={seed}):")
+    print(summary.to_string(index=False))
+    print("\nPaired comparison vs each baseline (positive = optimiser faster, 95% CI):")
+    for comparison in comparisons:
+        supported = "yes" if comparison["statistically_supported_advantage"] else "no"
+        lower = comparison["95pct_ci_lower_seconds"]
+        upper = comparison["95pct_ci_upper_seconds"]
+        print(
+            f"  vs {comparison['baseline_name']}: "
+            f"{comparison['mean_advantage_seconds']:+.3f}s [{lower:+.3f}, {upper:+.3f}] "
+            f"statistically supported: {supported}"
+        )
     print(f"Report written to {report_path}")
     return 0
 
@@ -350,6 +545,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "simulate":
         return _simulate(
             args.reference_benchmark,
+            args.n_simulations,
+            args.seed,
+            not args.no_safety_car,
+            args.data_dir,
+        )
+    if args.command == "decide":
+        return _decide(
+            args.reference_benchmark,
+            args.top_k,
             args.n_simulations,
             args.seed,
             not args.no_safety_car,
