@@ -30,8 +30,10 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -262,20 +264,44 @@ def load_cohere_api_key(env_path: Path | None = None) -> str:
     )
 
 
+# HTTP statuses worth retrying: rate limiting and transient server-side
+# failures. A 400 (bad request -- e.g. the "document id contains
+# whitespace" bug this project already found once) is not in this set on
+# purpose: retrying a request the server has already rejected as invalid
+# just wastes three calls to reproduce the same error.
+RETRYABLE_HTTP_STATUSES: frozenset[int] = frozenset({429, 500, 502, 503, 504})
+
+
 class CohereClient:
     """A minimal client for Cohere's v2 chat endpoint, using only the standard library.
 
     This project's dependency list has stayed deliberately narrow (fastf1,
     pandas, pyarrow, numpy) through four phases; a single JSON POST
     request does not justify adding the full Cohere SDK as a fifth.
+
+    Retries transient failures (read timeouts, connection errors, rate
+    limiting, 5xx server errors) with exponential backoff -- found to be
+    necessary in practice, not speculatively: a real `apexmind explain`
+    run hit a read timeout that succeeded on a bare retry a few seconds
+    later, with no code or request change in between.
     """
 
     def __init__(
-        self, api_key: str, *, model: str = DEFAULT_MODEL, timeout_seconds: float = 30.0
+        self,
+        api_key: str,
+        *,
+        model: str = DEFAULT_MODEL,
+        timeout_seconds: float = 30.0,
+        max_retries: int = 2,
+        retry_backoff_seconds: float = 1.0,
+        sleep: Callable[[float], None] = time.sleep,
     ) -> None:
         self._api_key = api_key
         self._model = model
         self._timeout_seconds = timeout_seconds
+        self._max_retries = max_retries
+        self._retry_backoff_seconds = retry_backoff_seconds
+        self._sleep = sleep
 
     def chat(self, *, question: str, documents: tuple[dict[str, Any], ...]) -> dict[str, Any]:
         payload = {
@@ -292,16 +318,27 @@ class CohereClient:
             },
             method="POST",
         )
-        try:
-            with urllib.request.urlopen(request, timeout=self._timeout_seconds) as response:
-                return json.loads(response.read().decode("utf-8"))
-        except urllib.error.HTTPError as error:
-            body = error.read().decode("utf-8", errors="replace")
-            raise EvidenceInterfaceError(f"Cohere API error {error.code}: {body}") from error
-        except urllib.error.URLError as error:
-            raise EvidenceInterfaceError(
-                f"Could not reach the Cohere API: {error.reason}"
-            ) from error
+
+        attempt = 0
+        while True:
+            try:
+                with urllib.request.urlopen(request, timeout=self._timeout_seconds) as response:
+                    return json.loads(response.read().decode("utf-8"))
+            except urllib.error.HTTPError as error:
+                body = error.read().decode("utf-8", errors="replace")
+                if error.code in RETRYABLE_HTTP_STATUSES and attempt < self._max_retries:
+                    self._sleep(self._retry_backoff_seconds * (2**attempt))
+                    attempt += 1
+                    continue
+                raise EvidenceInterfaceError(f"Cohere API error {error.code}: {body}") from error
+            except urllib.error.URLError as error:
+                if attempt < self._max_retries:
+                    self._sleep(self._retry_backoff_seconds * (2**attempt))
+                    attempt += 1
+                    continue
+                raise EvidenceInterfaceError(
+                    f"Could not reach the Cohere API after {attempt + 1} attempts: {error.reason}"
+                ) from error
 
 
 def generate_explanation(
