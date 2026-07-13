@@ -68,17 +68,17 @@ This roadmap is intentionally gated. A later stage does not start merely because
 
 ## Phase 5 — Evidence interface
 
-**Status:** In progress — evidence ledger, cited retrieval, and code-level abstention implemented and verified against the real Cohere API on all three benchmarks; replay interface and technical report not started
+**Status:** Complete for v1 scope — evidence ledger, cited retrieval, code-level abstention, a minimal replay interface, and a technical report are all implemented and verified against real data; deeper claim-level faithfulness testing remains a named, tracked gap rather than a closed one
 
 **Target:** Weeks 9–10
 
 - [x] Add evidence and assumption ledger to every recommendation (`apexmind explain`; every item tagged observed/inferred/simulated — see `docs/EVIDENCE_INTERFACE.md`)
 - [x] Implement regulation retrieval with citations (Article B6.3.6 from Phase 4, cited with real character-span citations from Cohere's grounded generation)
-- [x] Add explanation quality tests and abstention behaviour (abstention: code refuses to call the model with no evidence, tested with a fake client that fails if invoked; citation validity: unknown source ids are dropped, not trusted — broader load-bearing-number coverage tests not yet written)
-- [ ] Build a minimal replay interface
-- [ ] Publish a technical report and reproducibility guide
+- [x] Add explanation quality tests and abstention behaviour (abstention: code refuses to call the model with no evidence, tested with a fake client that fails if invoked; citation validity: unknown source ids are dropped, not trusted; a coverage check flags if either safety-critical claim — legality or the chosen strategy — goes uncited. Broader, per-sentence faithfulness checking is not implemented.)
+- [x] Build a minimal replay interface (`apexmind replay`; a single self-contained HTML file per benchmark showing the real track-status timeline, the chosen strategy overlaid on it, the evidence ledger, and the cited explanation — no server, no JS framework, matching this project's Phase 3 tooling discipline)
+- [x] Publish a technical report and reproducibility guide (`docs/TECHNICAL_REPORT.md`)
 
-**Exit criterion:** an independent reviewer can reproduce a demo decision and trace every claim to data, a model output, or an explicit assumption. **Progress so far:** every citation returned across three real, live-API runs traced to a real evidence item computed from a Phase 4 decision report; full detail, including a real "document id contains whitespace" bug found and fixed against the live API, in `docs/EVIDENCE_INTERFACE.md`. Not yet assessed as met — the replay interface and technical report remain.
+**Exit criterion:** an independent reviewer can reproduce a demo decision and trace every claim to data, a model output, or an explicit assumption. **Result:** met for v1 scope. `docs/TECHNICAL_REPORT.md` gives a reviewer an explicit, numbered checklist to verify this directly (fresh clone through to opening a replay page in a browser), and every citation returned across real, live-API runs on all three benchmarks traced to a real evidence item computed from a Phase 4 decision report. A live-API bug (document ids containing whitespace) was found and fixed rather than only caught by mocked tests — recorded in `docs/EVIDENCE_INTERFACE.md`. What remains open, by design rather than oversight: per-sentence faithfulness testing beyond citation-validity and safety-critical-claim coverage.
 
 ## Deferred backlog
 
