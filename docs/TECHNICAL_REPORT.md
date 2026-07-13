@@ -61,11 +61,19 @@ not work, not just what does:
   narrowed the gap at every confidence level but did not close it (95%
   coverage: 79% &rarr; 81% against a 95% nominal target). Tracked as an
   open item, not claimed as solved.
-- **`dutch-2023` RMSE.** Worse than baseline on this hold-out under every
-  version of the pace model tried so far — the project's hardest
-  benchmark by design (rain, a red flag, tyre-compound transitions). The
-  Safety Car restart-lap fix moved this benchmark by about 1%, within
-  noise, in neither a clearly better nor worse direction.
+- **`dutch-2023` RMSE.** Worse than baseline when pooled across every
+  compound — but now precisely attributed, not just observed
+  (`docs/PACE_MODEL.md`, "Fourth iteration"): on the 79% of this
+  hold-out's laps run on dry compounds, the model beats baseline by
+  roughly the same margin it does everywhere else (MAE 27% better, RMSE
+  25% better). The pooled number is worse than baseline only because of
+  the 21% run on `INTERMEDIATE`, a compound with zero representation in
+  either of the two training benchmarks whenever `dutch-2023` is held
+  out. This is not an outlier-filtering problem like the two fixes
+  above; there is no training signal for that compound to recover, and
+  fixing it for real would need a benchmark race with more wet-weather
+  data than this project currently has. Named as understood and
+  currently unfixable, not left as an unexplained negative number.
 - **The `SOFT` degradation slope is still small.** Fixing the fuel/tyre
   confound corrected its *sign*, not its *magnitude* — a genuine, separate
   limitation of a linear, single-regime model on this data volume.

@@ -338,10 +338,74 @@ over-caution rather than false confidence. This is treated as continuing
 to meet the exit criterion, with two specific, named items carried
 forward rather than closed: `singapore-2023`'s calibration gap (narrowed
 by the fix above, not eliminated) and `dutch-2023`'s persistent RMSE
-weakness. A Normal-likelihood assumption remains in place; a heavier
--tailed (Student-t) likelihood is still the most-named, not-yet
--implemented refinement for whichever of those two items gets picked up
-next.
+weakness — which the next section explains precisely rather than leaving
+as an unqualified negative number.
+
+## Fourth iteration: what `dutch-2023`'s RMSE gap actually is
+
+Rather than accept "worse than baseline on `dutch-2023`" as a closed,
+unexplained fact, its worst residuals were inspected directly, the same
+method that found both fixes above. The result was different in kind
+from either of them: **this one is not a bug**.
+
+The ten largest residuals on the `dutch-2023` hold-out were almost all
+`INTERMEDIATE`-compound laps, split into two distinct clusters: laps 3-4
+(race progress ≈0.05, the still-wet opening laps) and lap 67 (race
+progress ≈0.93, after the race's red-flag restart). Checking every
+`INTERMEDIATE` lap in this benchmark, not just the worst few, found no
+single-lap anomaly to filter — every stint of `INTERMEDIATE` running
+already averages 7-10 seconds off the dry-compound baseline, with
+moderate, not extreme, per-lap spread (`std` 1.6-2.7s within each
+stint). The residuals are not outliers within their group; the group
+itself is a regime the model has no way to have learned, because
+`bahrain-2024` and `singapore-2023` — the only two benchmarks in the
+training set whenever `dutch-2023` is held out — contain zero
+`INTERMEDIATE` or `WET` laps between them. The model's `compound_INTERMEDIATE`
+coefficients sit at the weakly-informative prior's default in this
+configuration, by construction, for exactly the same reason `WET`'s
+coefficients do throughout this project (see "Model" above) — there is
+nothing to estimate them from.
+
+Splitting the hold-out's metrics by compound class
+(`metrics_by_compound_class`, wired into `apexmind evaluate`'s output)
+makes the shape of this precise instead of buried in one pooled number:
+
+| Compound class | Share of laps | Baseline MAE / RMSE | Model MAE / RMSE |
+|---|---:|---:|---:|
+| Dry (`SOFT`/`MEDIUM`/`HARD`) | 79% (735 laps) | 1.408 / 1.657 | **1.033 / 1.244** |
+| `INTERMEDIATE`/`WET` | 21% (192 laps) | 7.704 / 7.949 | 9.197 / 9.403 |
+
+On the 79% of `dutch-2023` that is dry-compound racing — the same kind
+of racing every other benchmark and every Phase 4 strategy decision is
+made of — the model beats baseline by roughly the same clear margin it
+does everywhere else (MAE 27% better, RMSE 25% better). The pooled
+RMSE headline is worse than baseline only because of the 21% run on a
+compound this specific holdout split gives the model zero opportunity to
+learn. This is not fixable by better filtering, a different likelihood,
+or more careful outlier handling — those tools address noise around a
+learnable signal, and there is no training signal here to learn from.
+Fixing it for real would need either a benchmark race with more than one
+race's worth of intermediate/wet data, or accepting `dutch-2023`'s own
+wet-weather laps into its own training set (which would stop this being
+a genuine hold-out test). Neither is available now; both are named
+here rather than worked around.
+
+### Exit criterion assessment, revised
+
+`dutch-2023`'s "worse than baseline" result is real, correctly measured,
+and now precisely attributable: it is not evidence the pace model is
+weak at tyre-and-pace estimation in general, it is evidence that one
+compound class has no representation in two of this project's three
+benchmark races. `docs/PROJECT_PLAN.md`'s evaluation protocol already
+calls for `dutch-2023` specifically as the "changing conditions" stress
+case, and this result is the honest, quantified version of exactly the
+weakness that benchmark was chosen to expose — not a new problem, a
+correctly measured one. The primary hold-out (`bahrain-2024`) remains
+the basis for the Phase 2 exit-criterion judgement above; `singapore-2023`'s
+calibration gap and the still-unimplemented heavier-tailed likelihood
+remain the two open items with a plausible path to improvement. `dutch-2023`'s
+`INTERMEDIATE`/`WET` gap is carried forward as a named, understood, and
+currently unfixable-without-new-data limitation, not a to-do.
 
 ## Reproducing this result
 
