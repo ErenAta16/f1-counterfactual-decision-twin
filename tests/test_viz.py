@@ -112,3 +112,57 @@ def test_figures_can_be_saved_to_disk(tmp_path) -> None:
 
     assert output_path.exists()
     assert output_path.stat().st_size > 0
+
+
+@pytest.mark.parametrize("mode", ["light", "dark"])
+def test_plot_tyre_degradation_accepts_both_modes(mode) -> None:
+    posterior = _fitted_posterior()
+
+    ax = plot_tyre_degradation(posterior, compounds=("SOFT", "HARD"), mode=mode)
+
+    assert len(ax.lines) == 2
+
+
+@pytest.mark.parametrize("mode", ["light", "dark"])
+def test_plot_calibration_reliability_accepts_both_modes(mode) -> None:
+    rng = np.random.default_rng(1)
+    y_true = rng.normal(size=50)
+    mean = y_true + rng.normal(scale=0.1, size=50)
+    variance = np.full(50, 0.05)
+
+    ax = plot_calibration_reliability(y_true, mean, variance, mode=mode)
+
+    assert len(ax.lines) == 2
+
+
+@pytest.mark.parametrize("mode", ["light", "dark"])
+def test_plot_monte_carlo_outcomes_accepts_both_modes(mode) -> None:
+    results = pd.DataFrame(
+        {
+            "strategy_name": ["A"] * 20 + ["B"] * 20,
+            "total_race_time_seconds": np.concatenate([np.full(20, 100.0), np.full(20, 105.0)]),
+        }
+    )
+
+    ax = plot_monte_carlo_outcomes(results, mode=mode)
+
+    assert len(ax.patches) > 0
+
+
+def test_light_and_dark_modes_render_different_surface_colors() -> None:
+    posterior = _fitted_posterior()
+
+    light_ax = plot_tyre_degradation(posterior, compounds=("SOFT",), mode="light")
+    dark_ax = plot_tyre_degradation(posterior, compounds=("SOFT",), mode="dark")
+
+    assert light_ax.figure.get_facecolor() != dark_ax.figure.get_facecolor()
+
+
+def test_dark_mode_tyre_degradation_uses_dark_compound_colors() -> None:
+    posterior = _fitted_posterior()
+
+    ax = plot_tyre_degradation(posterior, compounds=("SOFT",), mode="dark")
+
+    from apexmind.viz import COMPOUND_COLORS
+
+    assert ax.lines[0].get_color() == COMPOUND_COLORS["SOFT"]["dark"]
