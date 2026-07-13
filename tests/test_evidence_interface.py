@@ -1,3 +1,6 @@
+import io
+import json
+import urllib.error
 from typing import Any
 
 import pytest
@@ -5,6 +8,7 @@ import pytest
 from apexmind.evidence_interface import (
     AbstentionError,
     Citation,
+    CohereClient,
     CohereConfigError,
     EvidenceInterfaceError,
     EvidenceItem,
@@ -237,3 +241,121 @@ def test_assess_explanation_coverage_only_flags_required_ids_present_in_evidence
     result = ExplanationResult(text="uncited", citations=())
 
     assert assess_explanation_coverage(evidence, result) == ("chosen_strategy",)
+
+
+class _FakeHTTPResponse:
+    """A minimal stand-in for the context-manager urllib.request.urlopen returns."""
+
+    def __init__(self, payload: dict[str, Any]) -> None:
+        self._body = json.dumps(payload).encode("utf-8")
+
+    def read(self) -> bytes:
+        return self._body
+
+    def __enter__(self) -> "_FakeHTTPResponse":
+        return self
+
+    def __exit__(self, *args: object) -> bool:
+        return False
+
+
+_OK_PAYLOAD = {"message": {"content": [{"type": "text", "text": "ok"}], "citations": []}}
+
+
+def test_cohere_client_retries_a_transient_network_error_then_succeeds(monkeypatch) -> None:
+    calls = []
+    sleeps = []
+
+    def fake_urlopen(request, timeout):
+        calls.append(1)
+        if len(calls) == 1:
+            raise urllib.error.URLError("timed out")
+        return _FakeHTTPResponse(_OK_PAYLOAD)
+
+    monkeypatch.setattr("apexmind.evidence_interface.urllib.request.urlopen", fake_urlopen)
+    client = CohereClient("key", sleep=lambda seconds: sleeps.append(seconds))
+
+    result = client.chat(question="q", documents=())
+
+    assert len(calls) == 2
+    assert sleeps == [1.0]  # retry_backoff_seconds * 2**0
+    assert result == _OK_PAYLOAD
+
+
+def test_cohere_client_gives_up_after_max_retries(monkeypatch) -> None:
+    def fake_urlopen(request, timeout):
+        raise urllib.error.URLError("still down")
+
+    monkeypatch.setattr("apexmind.evidence_interface.urllib.request.urlopen", fake_urlopen)
+    client = CohereClient("key", max_retries=2, sleep=lambda seconds: None)
+
+    with pytest.raises(EvidenceInterfaceError, match="after 3 attempts"):
+        client.chat(question="q", documents=())
+
+
+def test_cohere_client_retries_a_retryable_http_status(monkeypatch) -> None:
+    calls = []
+
+    def fake_urlopen(request, timeout):
+        calls.append(1)
+        if len(calls) == 1:
+            raise urllib.error.HTTPError(
+                "https://api.cohere.com/v2/chat",
+                429,
+                "Too Many Requests",
+                None,
+                io.BytesIO(b"rate limited"),
+            )
+        return _FakeHTTPResponse(_OK_PAYLOAD)
+
+    monkeypatch.setattr("apexmind.evidence_interface.urllib.request.urlopen", fake_urlopen)
+    client = CohereClient("key", sleep=lambda seconds: None)
+
+    result = client.chat(question="q", documents=())
+
+    assert len(calls) == 2
+    assert result == _OK_PAYLOAD
+
+
+def test_cohere_client_does_not_retry_a_non_retryable_http_status(monkeypatch) -> None:
+    calls = []
+
+    def fake_urlopen(request, timeout):
+        calls.append(1)
+        raise urllib.error.HTTPError(
+            "https://api.cohere.com/v2/chat",
+            400,
+            "Bad Request",
+            None,
+            io.BytesIO(b"document id contains whitespace"),
+        )
+
+    monkeypatch.setattr("apexmind.evidence_interface.urllib.request.urlopen", fake_urlopen)
+    client = CohereClient("key", sleep=lambda seconds: pytest.fail("must not retry a 400"))
+
+    with pytest.raises(EvidenceInterfaceError, match="400"):
+        client.chat(question="q", documents=())
+
+    # A single attempt: retrying a request the server already rejected as
+    # invalid would just reproduce the same error three times.
+    assert len(calls) == 1
+
+
+def test_cohere_client_backoff_doubles_each_attempt(monkeypatch) -> None:
+    sleeps = []
+
+    def fake_urlopen(request, timeout):
+        raise urllib.error.URLError("down")
+
+    monkeypatch.setattr("apexmind.evidence_interface.urllib.request.urlopen", fake_urlopen)
+    client = CohereClient(
+        "key",
+        max_retries=3,
+        retry_backoff_seconds=0.5,
+        sleep=lambda seconds: sleeps.append(seconds),
+    )
+
+    with pytest.raises(EvidenceInterfaceError):
+        client.chat(question="q", documents=())
+
+    assert sleeps == [0.5, 1.0, 2.0]
