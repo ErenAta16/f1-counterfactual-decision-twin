@@ -347,3 +347,31 @@ def generate_explanation(
             citations.append(Citation(text=raw_citation.get("text", ""), evidence_ids=cited_ids))
 
     return ExplanationResult(text=text, citations=tuple(citations))
+
+
+# The two claims a reader cannot afford to have silently dropped: which
+# strategy is being recommended, and why it is legal. Everything else in
+# the evidence set is supporting detail; these two are the safety-critical
+# core Gate E ("every answer is evidence-backed or explicitly abstains")
+# most needs to hold for.
+REQUIRED_EVIDENCE_IDS: frozenset[str] = frozenset({"regulation", "chosen_strategy"})
+
+
+def assess_explanation_coverage(
+    evidence: tuple[EvidenceItem, ...], result: ExplanationResult
+) -> tuple[str, ...]:
+    """Return the ids of any safety-critical evidence item the explanation did not cite.
+
+    This is a narrower, automatable stand-in for Gate E's full "every
+    claim is evidence-backed" requirement: it does not check that every
+    sentence in the output has a citation (that would need a human or a
+    second model judging faithfulness), but it does mechanically catch
+    the one failure this project cannot tolerate silently — an
+    explanation that recommends a strategy without ever citing what makes
+    it legal, or without saying what the strategy actually is. An empty
+    tuple means both were covered.
+    """
+
+    available_ids = {item.id for item in evidence}
+    required_present = REQUIRED_EVIDENCE_IDS & available_ids
+    return tuple(sorted(required_present - result.cited_evidence_ids))
