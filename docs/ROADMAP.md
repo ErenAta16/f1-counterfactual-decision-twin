@@ -68,15 +68,17 @@ This roadmap is intentionally gated. A later stage does not start merely because
 
 ## Phase 5 — Evidence interface
 
+**Status:** In progress — evidence ledger, cited retrieval, and code-level abstention implemented and verified against the real Cohere API on all three benchmarks; replay interface and technical report not started
+
 **Target:** Weeks 9–10
 
-- [ ] Add evidence and assumption ledger to every recommendation
-- [ ] Implement regulation retrieval with citations
-- [ ] Add explanation quality tests and abstention behaviour
+- [x] Add evidence and assumption ledger to every recommendation (`apexmind explain`; every item tagged observed/inferred/simulated — see `docs/EVIDENCE_INTERFACE.md`)
+- [x] Implement regulation retrieval with citations (Article B6.3.6 from Phase 4, cited with real character-span citations from Cohere's grounded generation)
+- [x] Add explanation quality tests and abstention behaviour (abstention: code refuses to call the model with no evidence, tested with a fake client that fails if invoked; citation validity: unknown source ids are dropped, not trusted — broader load-bearing-number coverage tests not yet written)
 - [ ] Build a minimal replay interface
 - [ ] Publish a technical report and reproducibility guide
 
-**Exit criterion:** an independent reviewer can reproduce a demo decision and trace every claim to data, a model output, or an explicit assumption.
+**Exit criterion:** an independent reviewer can reproduce a demo decision and trace every claim to data, a model output, or an explicit assumption. **Progress so far:** every citation returned across three real, live-API runs traced to a real evidence item computed from a Phase 4 decision report; full detail, including a real "document id contains whitespace" bug found and fixed against the live API, in `docs/EVIDENCE_INTERFACE.md`. Not yet assessed as met — the replay interface and technical report remain.
 
 ## Deferred backlog
 

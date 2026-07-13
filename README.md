@@ -2,7 +2,7 @@
 
 An offline research laboratory for analysing Formula 1 strategy decisions from public data. At a decision point, ApexMind compares counterfactual options such as *pit now*, *extend the stint*, and *protect track position* under explicit assumptions, uncertainty, and FIA-rule constraints.
 
-> Status: **Phases 1-4 implemented (data fidelity, predictive foundation, counterfactual simulator, constrained decision engine); Phase 5 (evidence interface) not yet started**
+> Status: **Phases 1-4 implemented (data fidelity, predictive foundation, counterfactual simulator, constrained decision engine); Phase 5 (evidence interface) in progress — cited, evidence-grounded explanation generation is implemented, the replay interface and technical report are not**
 
 ## The honest boundary
 
@@ -20,7 +20,7 @@ The 2026 F1 regulations place greater emphasis on energy management and active a
 
 ## Near-term milestone
 
-Phases 1-4 are complete: a reproducible replay of three historical races, a validated tyre-and-pace model, a counterfactual race simulator, and a constrained strategy optimiser with one encoded FIA regulation. The next milestone is Phase 5, the evidence interface — no LLM or natural-language component exists yet.
+Phases 1-4 are complete: a reproducible replay of three historical races, a validated tyre-and-pace model, a counterfactual race simulator, and a constrained strategy optimiser with one encoded FIA regulation. Phase 5, the evidence interface, is in progress: cited, evidence-grounded explanation generation is implemented and verified against a real language model API; a replay interface and technical report remain.
 
 The initial data-fidelity work, benchmark rationale, source caveats, and the normalised lap-state schema are recorded in [`docs/DATA_FOUNDATION.md`](docs/DATA_FOUNDATION.md).
 
@@ -29,6 +29,8 @@ The pace/tyre model, its baselines, and its current calibration gap are recorded
 The counterfactual race simulator, its declared Safety Car scenario, and its scope limits are recorded in [`docs/SIMULATOR.md`](docs/SIMULATOR.md).
 
 The constrained decision engine, its one encoded FIA regulation, and the pace-model limitation its optimiser surfaced are recorded in [`docs/DECISION_ENGINE.md`](docs/DECISION_ENGINE.md).
+
+The evidence interface — cited, evidence-grounded explanation generation, its model choice, and what is still missing — is recorded in [`docs/EVIDENCE_INTERFACE.md`](docs/EVIDENCE_INTERFACE.md).
 
 ## Data and attribution
 
