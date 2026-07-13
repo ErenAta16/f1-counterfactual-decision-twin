@@ -17,7 +17,7 @@ from apexmind.benchmarks import BENCHMARK_RACES
 from apexmind.cli import DEFAULT_HOLDOUT_BENCHMARK, _parser, main
 from apexmind.paths import default_data_root
 
-ALL_COMMANDS = ("ingest", "evaluate", "simulate", "decide", "explain", "replay")
+ALL_COMMANDS = ("ingest", "evaluate", "simulate", "decide", "explain", "replay", "plot")
 
 
 def test_no_command_is_an_error() -> None:
@@ -188,3 +188,39 @@ def test_main_dispatches_replay_with_the_parsed_arguments(monkeypatch) -> None:
     main(["replay", "--reference-benchmark", "bahrain-2024"])
 
     assert calls == [("bahrain-2024", default_data_root())]
+
+
+def test_plot_defaults_to_the_documented_primary_holdout_for_both_benchmarks() -> None:
+    args = _parser().parse_args(["plot"])
+    assert args.reference_benchmark == DEFAULT_HOLDOUT_BENCHMARK == "bahrain-2024"
+    assert args.holdout == DEFAULT_HOLDOUT_BENCHMARK
+
+
+def test_main_dispatches_plot_with_the_parsed_arguments(monkeypatch) -> None:
+    calls = []
+    monkeypatch.setattr(
+        "apexmind.cli._plot",
+        lambda ref, holdout, n_sim, seed, use_sc, data_dir: (
+            calls.append((ref, holdout, n_sim, seed, use_sc, data_dir)) or 0
+        ),
+    )
+
+    main(["plot", "--reference-benchmark", "singapore-2023", "--holdout", "dutch-2023"])
+
+    assert calls == [("singapore-2023", "dutch-2023", 2000, 0, True, default_data_root())]
+
+
+def test_main_dispatches_plot_and_inverts_no_safety_car(monkeypatch) -> None:
+    calls = []
+    monkeypatch.setattr(
+        "apexmind.cli._plot",
+        lambda ref, holdout, n_sim, seed, use_sc, data_dir: (
+            calls.append((ref, holdout, n_sim, seed, use_sc, data_dir)) or 0
+        ),
+    )
+
+    main(["plot", "--no-safety-car"])
+
+    assert calls == [
+        (DEFAULT_HOLDOUT_BENCHMARK, DEFAULT_HOLDOUT_BENCHMARK, 2000, 0, False, default_data_root())
+    ]
