@@ -192,6 +192,45 @@ def _parser() -> argparse.ArgumentParser:
         default=default_data_root(),
         help="local, untracked root containing previously written decision/explanation reports",
     )
+
+    plot = subparsers.add_parser(
+        "plot",
+        help="render tyre-degradation, calibration-reliability, and Monte Carlo PNGs "
+        "(requires the 'viz' extra)",
+    )
+    plot.add_argument(
+        "--reference-benchmark",
+        choices=[benchmark.identifier for benchmark in BENCHMARK_RACES],
+        default=DEFAULT_HOLDOUT_BENCHMARK,
+        help="benchmark for the tyre-degradation and Monte Carlo charts "
+        f"(default: {DEFAULT_HOLDOUT_BENCHMARK})",
+    )
+    plot.add_argument(
+        "--holdout",
+        choices=[benchmark.identifier for benchmark in BENCHMARK_RACES],
+        default=DEFAULT_HOLDOUT_BENCHMARK,
+        help=f"benchmark held out for the calibration chart (default: {DEFAULT_HOLDOUT_BENCHMARK})",
+    )
+    plot.add_argument(
+        "--n-simulations",
+        type=int,
+        default=2000,
+        help="number of Monte Carlo draws per strategy for the outcomes chart (default: 2000)",
+    )
+    plot.add_argument(
+        "--seed", type=int, default=0, help="random seed for reproducibility (default: 0)"
+    )
+    plot.add_argument(
+        "--no-safety-car",
+        action="store_true",
+        help="disable the declared Safety Car scenario in the Monte Carlo outcomes chart",
+    )
+    plot.add_argument(
+        "--data-dir",
+        type=Path,
+        default=default_data_root(),
+        help="local, untracked root containing previously ingested lap-state artefacts",
+    )
     return parser
 
 
@@ -776,6 +815,102 @@ def _replay(reference_benchmark_id: str, data_dir: Path) -> int:
     return 0
 
 
+def _plot(
+    reference_benchmark_id: str,
+    holdout_benchmark_id: str,
+    n_simulations: int,
+    seed: int,
+    use_safety_car: bool,
+    data_dir: Path,
+) -> int:
+    try:
+        from apexmind.viz import (
+            plot_calibration_reliability,
+            plot_monte_carlo_outcomes,
+            plot_tyre_degradation,
+        )
+    except ImportError as error:
+        raise SystemExit(str(error)) from error
+
+    paths = DataPaths.from_root(data_dir)
+    paths.create()
+
+    all_states = {
+        benchmark.identifier: _load_lap_state(paths, benchmark.identifier)
+        for benchmark in BENCHMARK_RACES
+    }
+    all_race_control = {
+        benchmark.identifier: _load_race_control(paths, benchmark.identifier)
+        for benchmark in BENCHMARK_RACES
+    }
+    full_state = pd.concat(all_states.values(), ignore_index=True)
+    written_paths: list[Path] = []
+
+    stats = _reference_race_stats(all_states, all_race_control, full_state, reference_benchmark_id)
+
+    # The dry slick compounds (SOFT/MEDIUM/HARD) have comparable support
+    # across all three benchmarks; INTERMEDIATE/WET only have laps from
+    # dutch-2023's rain-affected stints, so their predictive band widens
+    # sharply past that benchmark's observed tyre life and dominates the
+    # chart without adding a readable signal. Capping at a realistic
+    # single-stint length keeps this the intended headline chart; the
+    # function itself still accepts any compound/tyre-life combination
+    # for a caller who wants the full picture (see apexmind.viz).
+    tyre_ax = plot_tyre_degradation(
+        stats.posterior,
+        compounds=("SOFT", "MEDIUM", "HARD"),
+        max_tyre_life=min(stats.max_observed_tyre_life, 35),
+    )
+    tyre_path = paths.plot_reports / f"{reference_benchmark_id}-tyre-degradation.png"
+    tyre_ax.figure.savefig(tyre_path, dpi=150, bbox_inches="tight")
+    written_paths.append(tyre_path)
+
+    laps_with_delta = {
+        benchmark_id: remove_pace_outliers(
+            add_race_progress(
+                add_pace_delta(
+                    exclude_safety_car_restart_laps(
+                        select_green_flag_laps(state), all_race_control[benchmark_id]
+                    )
+                ),
+                session_total_laps=int(state["lap_number"].max()),
+            )
+        )
+        for benchmark_id, state in all_states.items()
+    }
+    train_laps, test_laps = temporal_holdout_split(
+        laps_with_delta, holdout_benchmark_id=holdout_benchmark_id
+    )
+    train_design, train_target, _ = build_pace_design_matrix(train_laps)
+    test_design, test_target, _ = build_pace_design_matrix(test_laps)
+    holdout_posterior = fit_bayesian_pace_model(train_design, train_target)
+    test_mean, test_variance = predict(holdout_posterior, test_design)
+    calibration_ax = plot_calibration_reliability(test_target.to_numpy(), test_mean, test_variance)
+    calibration_path = paths.plot_reports / f"{holdout_benchmark_id}-calibration-reliability.png"
+    calibration_ax.figure.savefig(calibration_path, dpi=150, bbox_inches="tight")
+    written_paths.append(calibration_path)
+
+    safety_car_scenario = SafetyCarScenario() if use_safety_car else None
+    strategies = _example_strategies(stats.total_laps)
+    mc_results = run_monte_carlo(
+        strategies,
+        stats.posterior,
+        driver_baseline_seconds=stats.driver_baseline_seconds,
+        pit_loss_seconds=stats.pit_loss_seconds,
+        n_simulations=n_simulations,
+        seed=seed,
+        safety_car_scenario=safety_car_scenario,
+    )
+    mc_ax = plot_monte_carlo_outcomes(mc_results)
+    mc_path = paths.plot_reports / f"{reference_benchmark_id}-monte-carlo-outcomes.png"
+    mc_ax.figure.savefig(mc_path, dpi=150, bbox_inches="tight")
+    written_paths.append(mc_path)
+
+    for path in written_paths:
+        print(f"Wrote {path}")
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the ApexMind command-line interface."""
 
@@ -805,6 +940,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _explain(args.reference_benchmark, args.data_dir)
     if args.command == "replay":
         return _replay(args.reference_benchmark, args.data_dir)
+    if args.command == "plot":
+        return _plot(
+            args.reference_benchmark,
+            args.holdout,
+            args.n_simulations,
+            args.seed,
+            not args.no_safety_car,
+            args.data_dir,
+        )
     raise AssertionError(f"Unhandled command: {args.command}")
 
 
