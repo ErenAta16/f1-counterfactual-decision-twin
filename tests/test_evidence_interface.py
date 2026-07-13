@@ -4,9 +4,12 @@ import pytest
 
 from apexmind.evidence_interface import (
     AbstentionError,
+    Citation,
     CohereConfigError,
     EvidenceInterfaceError,
     EvidenceItem,
+    ExplanationResult,
+    assess_explanation_coverage,
     build_decision_evidence,
     generate_explanation,
     load_cohere_api_key,
@@ -189,3 +192,48 @@ def test_load_cohere_api_key_raises_when_nothing_is_configured(monkeypatch, tmp_
 
     with pytest.raises(CohereConfigError):
         load_cohere_api_key(env_path=tmp_path / "does-not-exist.env")
+
+
+def test_assess_explanation_coverage_flags_missing_safety_critical_citation() -> None:
+    evidence = (
+        EvidenceItem(id="regulation", title="Rule", text="text", evidence_class="observed"),
+        EvidenceItem(id="chosen_strategy", title="Plan", text="text", evidence_class="inferred"),
+        EvidenceItem(id="race_reference", title="Ref", text="text", evidence_class="observed"),
+    )
+    # Cites an unrelated item but never the rule or the strategy itself.
+    result = ExplanationResult(
+        text="An explanation that never mentions legality or the plan.",
+        citations=(Citation(text="...", evidence_ids=("race_reference",)),),
+    )
+
+    missing = assess_explanation_coverage(evidence, result)
+
+    assert missing == ("chosen_strategy", "regulation")
+
+
+def test_assess_explanation_coverage_passes_when_both_are_cited() -> None:
+    evidence = (
+        EvidenceItem(id="regulation", title="Rule", text="text", evidence_class="observed"),
+        EvidenceItem(id="chosen_strategy", title="Plan", text="text", evidence_class="inferred"),
+    )
+    result = ExplanationResult(
+        text="Legal because of the rule; the plan is X.",
+        citations=(
+            Citation(text="a", evidence_ids=("regulation",)),
+            Citation(text="b", evidence_ids=("chosen_strategy",)),
+        ),
+    )
+
+    assert assess_explanation_coverage(evidence, result) == ()
+
+
+def test_assess_explanation_coverage_only_flags_required_ids_present_in_evidence() -> None:
+    # "regulation" is never in this evidence set (not this project's real
+    # usage, but a valid input) -- there is nothing to demand a citation
+    # for, so only the present-but-uncited "chosen_strategy" is flagged.
+    evidence = (
+        EvidenceItem(id="chosen_strategy", title="Plan", text="t", evidence_class="inferred"),
+    )
+    result = ExplanationResult(text="uncited", citations=())
+
+    assert assess_explanation_coverage(evidence, result) == ("chosen_strategy",)
