@@ -270,19 +270,78 @@ from its own (limited, single-race) evidence rather than inheriting the
 dry-compound value, comes out much smaller in magnitude, as the far
 smaller sample size would suggest it should.
 
+## Third iteration: excluding Safety Car restart laps
+
+`docs/TECHNICAL_REPORT.md` named the `singapore-2023` calibration
+regression from the second iteration as unresolved. Investigating it
+rather than leaving it open found a second real, checkable cause,
+independent of the fuel/tyre confound above.
+
+### What was found
+
+The ten worst residuals on the `singapore-2023` hold-out clustered
+heavily on one specific lap: five of the ten were lap 23, immediately
+after the race-control message `SAFETY CAR IN THIS LAP` on lap 22.
+Checked directly against the full green-flag lap set (not just the worst
+residuals): lap 23's mean pace delta was 4.5 seconds, against a
+benchmark-wide green-flag average of 1.7 seconds, across 17 of the
+field's roughly 20 drivers — a Safety Car restart bunches the whole
+field up for a rolling start, and that first lap back at racing pace is
+measurably slower even though FastF1 correctly marks it green-flag (the
+Safety Car itself has already left the track by then). The same pattern
+held in `dutch-2023`: its restart lap (lap 22, after the Safety Car ended
+on lap 21) averaged 3.2 seconds against 1.6-1.9 seconds for the settled
+green-flag laps immediately following it. A Virtual Safety Car ending
+showed no equivalent effect (`singapore-2023`'s VSC restart lap, lap 46,
+averaged -0.4 seconds — if anything faster than typical): a VSC has no
+physical bunching behind a pace car and no rolling restart, so only true
+Safety Car restarts carry this effect.
+
+This is the same category of problem as the damp-track laps that
+prompted the first calibration fix above: a lap that is technically
+green-flagged but not representative of settled racing pace, which
+FastF1's track-status codes have no separate state to flag.
+
+### The fix and its result
+
+`exclude_safety_car_restart_laps` (`src/apexmind/pace_features.py`) drops
+the lap immediately following a Safety Car (not VSC) episode's end,
+identified from the same real race-control evidence
+`extract_safety_car_episodes` already parses for Phase 3. Re-running the
+full three-benchmark robustness check:
+
+| Holdout | MAE (before &rarr; after) | RMSE (before &rarr; after) | Coverage 50/80/95% (before &rarr; after) |
+|---|---|---|---|
+| `bahrain-2024` | 0.642 &rarr; 0.606 | 0.817 &rarr; 0.774 | 66/93/99% &rarr; 68/93/99% |
+| `singapore-2023` | 1.115 &rarr; 1.046 | 1.420 &rarr; 1.321 | 35/58/79% &rarr; 36/60/81% |
+| `dutch-2023` | 2.691 &rarr; 2.724 | 4.379 &rarr; 4.420 | 45/73/89% &rarr; 44/70/87% |
+
+Read plainly: `bahrain-2024` improved further, `singapore-2023`'s
+calibration regression from the second iteration is partially repaired
+(closer to nominal at every level, though still meaningfully
+under-covered — this fix reduced the problem, it did not solve it), and
+`dutch-2023` moved by roughly 1%, within noise, neither clearly better
+nor worse. No benchmark got meaningfully worse. `singapore-2023`'s
+remaining calibration gap is left as an open item rather than
+overstated as fixed; the heavier-tailed-likelihood refinement named
+below remains the most likely next lever for it.
+
 ### Exit criterion assessment
 
 Phase 2's exit criterion is "confidence intervals are calibrated and
 performance is not worse than the best simple baseline," evaluated on this
 project's primary, documented hold-out (`bahrain-2024`, training on the two
-2023 races). On that configuration the model now beats the baseline by a
-substantially larger margin than at the end of Phase 2 (MAE roughly halved
-relative to baseline), and its coverage, while imperfect, errs toward
+2023 races). On that configuration the model beats the baseline by a
+substantially larger margin than at the end of Phase 2 (MAE less than
+half the baseline's), and its coverage, while imperfect, errs toward
 over-caution rather than false confidence. This is treated as continuing
-to meet the exit criterion, with three specific, named items carried
-forward rather than closed: the `singapore-2023` calibration regression
-introduced by this fix, `dutch-2023`'s persistent RMSE weakness, and the
-still-unimplemented heavier-tailed-likelihood refinement noted above.
+to meet the exit criterion, with two specific, named items carried
+forward rather than closed: `singapore-2023`'s calibration gap (narrowed
+by the fix above, not eliminated) and `dutch-2023`'s persistent RMSE
+weakness. A Normal-likelihood assumption remains in place; a heavier
+-tailed (Student-t) likelihood is still the most-named, not-yet
+-implemented refinement for whichever of those two items gets picked up
+next.
 
 ## Reproducing this result
 
