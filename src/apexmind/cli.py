@@ -36,6 +36,7 @@ from apexmind.pace_features import (
     add_pace_delta,
     add_race_progress,
     build_pace_design_matrix,
+    exclude_safety_car_restart_laps,
     remove_pace_outliers,
     select_green_flag_laps,
 )
@@ -252,12 +253,26 @@ def _load_lap_state(paths: DataPaths, benchmark_id: str) -> pd.DataFrame:
     return pd.read_parquet(lap_state_path)
 
 
+def _load_race_control(paths: DataPaths, benchmark_id: str) -> pd.DataFrame:
+    race_control_path = paths.processed / f"{benchmark_id}-race-control.parquet"
+    if not race_control_path.exists():
+        raise SystemExit(
+            f"No ingested race-control file for '{benchmark_id}' at {race_control_path}. "
+            "Run 'apexmind ingest' first."
+        )
+    return pd.read_parquet(race_control_path)
+
+
 def _evaluate(holdout_benchmark_id: str, data_dir: Path) -> int:
     paths = DataPaths.from_root(data_dir)
     paths.create()
 
     all_states = {
         benchmark.identifier: _load_lap_state(paths, benchmark.identifier)
+        for benchmark in BENCHMARK_RACES
+    }
+    all_race_control = {
+        benchmark.identifier: _load_race_control(paths, benchmark.identifier)
         for benchmark in BENCHMARK_RACES
     }
     full_state = pd.concat(all_states.values(), ignore_index=True)
@@ -268,7 +283,11 @@ def _evaluate(holdout_benchmark_id: str, data_dir: Path) -> int:
     laps_with_delta = {
         benchmark_id: remove_pace_outliers(
             add_race_progress(
-                add_pace_delta(select_green_flag_laps(state)),
+                add_pace_delta(
+                    exclude_safety_car_restart_laps(
+                        select_green_flag_laps(state), all_race_control[benchmark_id]
+                    )
+                ),
                 session_total_laps=int(state["lap_number"].max()),
             )
         )
@@ -368,6 +387,7 @@ class _ReferenceRaceStats(NamedTuple):
 
 def _reference_race_stats(
     all_states: dict[str, pd.DataFrame],
+    all_race_control: dict[str, pd.DataFrame],
     full_state: pd.DataFrame,
     reference_benchmark_id: str,
 ) -> _ReferenceRaceStats:
@@ -382,11 +402,15 @@ def _reference_race_stats(
         [
             remove_pace_outliers(
                 add_race_progress(
-                    add_pace_delta(select_green_flag_laps(state)),
+                    add_pace_delta(
+                        exclude_safety_car_restart_laps(
+                            select_green_flag_laps(state), all_race_control[benchmark_id]
+                        )
+                    ),
                     session_total_laps=int(state["lap_number"].max()),
                 )
             )
-            for state in all_states.values()
+            for benchmark_id, state in all_states.items()
         ],
         ignore_index=True,
     )
@@ -420,9 +444,15 @@ def _simulate(
         benchmark.identifier: _load_lap_state(paths, benchmark.identifier)
         for benchmark in BENCHMARK_RACES
     }
+    all_race_control = {
+        benchmark.identifier: _load_race_control(paths, benchmark.identifier)
+        for benchmark in BENCHMARK_RACES
+    }
     full_state = pd.concat(all_states.values(), ignore_index=True)
 
-    stats = _reference_race_stats(all_states, full_state, reference_benchmark_id)
+    stats = _reference_race_stats(
+        all_states, all_race_control, full_state, reference_benchmark_id
+    )
     total_laps = stats.total_laps
 
     safety_car_scenario: SafetyCarScenario | None = None
@@ -476,9 +506,15 @@ def _decide(
         benchmark.identifier: _load_lap_state(paths, benchmark.identifier)
         for benchmark in BENCHMARK_RACES
     }
+    all_race_control = {
+        benchmark.identifier: _load_race_control(paths, benchmark.identifier)
+        for benchmark in BENCHMARK_RACES
+    }
     full_state = pd.concat(all_states.values(), ignore_index=True)
 
-    stats = _reference_race_stats(all_states, full_state, reference_benchmark_id)
+    stats = _reference_race_stats(
+        all_states, all_race_control, full_state, reference_benchmark_id
+    )
     total_laps = stats.total_laps
 
     candidates = optimise_strategies(

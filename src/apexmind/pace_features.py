@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import pandas as pd
 
+from apexmind.safety_car import extract_safety_car_episodes
+
 GREEN_FLAG_TRACK_STATUS = "1"
 MINIMUM_GREEN_FLAG_LAPS = 5
 BASELINE_PERCENTILE = 0.10
@@ -52,6 +54,37 @@ def select_green_flag_laps(state: pd.DataFrame) -> pd.DataFrame:
         & state["compound"].notna()
     )
     return state.loc[mask].copy()
+
+
+def exclude_safety_car_restart_laps(
+    green_flag_laps: pd.DataFrame, race_control: pd.DataFrame
+) -> pd.DataFrame:
+    """Drop the lap immediately after a Safety Car (not VSC) restart.
+
+    This exists because of a concrete finding, not a generic hygiene pass
+    -- the same evidentiary standard `remove_pace_outliers` was held to.
+    The lap right after the Safety Car peels off carries a green
+    track-status code, so it passes `select_green_flag_laps` looking like
+    settled racing pace, but a rolling restart bunches the whole field up
+    first: checked directly against real race-control data, the restart
+    lap in `singapore-2023` (lap 23, after `SAFETY CAR IN THIS LAP` on lap
+    22) was 4.5s slower than the benchmark-wide average pace delta across
+    17 of roughly 20 drivers, and `dutch-2023`'s restart lap (lap 22,
+    after the Safety Car ended on lap 21) was 3.2s slower than the settled
+    green-flag laps immediately following it (1.6-1.9s). A Virtual Safety
+    Car ending shows no equivalent effect (`singapore-2023`'s VSC restart
+    lap was, if anything, faster than average): VSC has no physical
+    bunching behind a pace car and no rolling restart, so only true
+    Safety Car endings are excluded here.
+    """
+
+    if race_control.empty:
+        return green_flag_laps
+    episodes = extract_safety_car_episodes(race_control)
+    restart_laps = {episode.end_lap + 1 for episode in episodes if episode.episode_type == "SC"}
+    if not restart_laps:
+        return green_flag_laps
+    return green_flag_laps.loc[~green_flag_laps["lap_number"].isin(restart_laps)].copy()
 
 
 def add_pace_delta(green_flag_laps: pd.DataFrame) -> pd.DataFrame:
