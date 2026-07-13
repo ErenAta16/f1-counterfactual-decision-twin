@@ -116,9 +116,7 @@ def _safety_car_timeline_segments(
     cursor = 1
     for episode in sorted(episodes, key=lambda e: e.start_lap):
         if episode.start_lap > cursor:
-            segments.append(
-                (cursor, episode.start_lap - 1, TRACK_STATUS_COLOR, "Green flag")
-            )
+            segments.append((cursor, episode.start_lap - 1, TRACK_STATUS_COLOR, "Green flag"))
         color = EPISODE_COLORS.get(episode.episode_type, "#999999")
         segments.append(
             (
@@ -166,7 +164,7 @@ def build_replay_html(
         f'<div class="evidence-row">'
         f'<span class="tag" style="color:'
         f'{EVIDENCE_CLASS_COLORS.get(item["evidence_class"], "#999")}">'
-        f'{escape(item["evidence_class"])}</span>'
+        f"{escape(item['evidence_class'])}</span>"
         f'<span class="evidence-title">{escape(item["title"])}</span>'
         f"</div>"
         for item in evidence
@@ -174,7 +172,7 @@ def build_replay_html(
 
     citation_rows = "".join(
         f'<div class="citation-row">"{escape(str(citation["text"]))}" '
-        f'&rarr; {escape(", ".join(str(i) for i in citation["evidence_ids"]))}</div>'
+        f"&rarr; {escape(', '.join(str(i) for i in citation['evidence_ids']))}</div>"
         for citation in citations
     )
 

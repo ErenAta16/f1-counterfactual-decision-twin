@@ -49,9 +49,7 @@ def _require_columns(frame: pd.DataFrame, required: set[str], context_name: str)
         raise ContextError(f"{context_name} is empty.")
 
 
-def build_race_control_events(
-    messages: pd.DataFrame, benchmark: BenchmarkRace
-) -> pd.DataFrame:
+def build_race_control_events(messages: pd.DataFrame, benchmark: BenchmarkRace) -> pd.DataFrame:
     """Return race-control messages as separate, provider-faithful event evidence."""
 
     _require_columns(
@@ -75,8 +73,10 @@ def build_race_control_events(
             "lap": pd.to_numeric(messages["Lap"], errors="coerce"),
         }
     )
-    return events.loc[:, RACE_CONTROL_COLUMNS].sort_values("event_time", kind="stable").reset_index(
-        drop=True
+    return (
+        events.loc[:, RACE_CONTROL_COLUMNS]
+        .sort_values("event_time", kind="stable")
+        .reset_index(drop=True)
     )
 
 
@@ -113,6 +113,8 @@ def build_weather_observations(weather: pd.DataFrame, benchmark: BenchmarkRace) 
             "wind_speed_mps": pd.to_numeric(weather["WindSpeed"], errors="coerce"),
         }
     )
-    return observations.loc[:, WEATHER_COLUMNS].sort_values(
-        "observation_seconds", kind="stable"
-    ).reset_index(drop=True)
+    return (
+        observations.loc[:, WEATHER_COLUMNS]
+        .sort_values("observation_seconds", kind="stable")
+        .reset_index(drop=True)
+    )

@@ -470,9 +470,7 @@ def _simulate(
     }
     full_state = pd.concat(all_states.values(), ignore_index=True)
 
-    stats = _reference_race_stats(
-        all_states, all_race_control, full_state, reference_benchmark_id
-    )
+    stats = _reference_race_stats(all_states, all_race_control, full_state, reference_benchmark_id)
     total_laps = stats.total_laps
 
     safety_car_scenario: SafetyCarScenario | None = None
@@ -532,9 +530,7 @@ def _decide(
     }
     full_state = pd.concat(all_states.values(), ignore_index=True)
 
-    stats = _reference_race_stats(
-        all_states, all_race_control, full_state, reference_benchmark_id
-    )
+    stats = _reference_race_stats(all_states, all_race_control, full_state, reference_benchmark_id)
     total_laps = stats.total_laps
 
     candidates = optimise_strategies(
@@ -701,7 +697,7 @@ def _explain(reference_benchmark_id: str, data_dir: Path) -> int:
     print(f"\n{result.text}")
     print(f"\nCitations ({len(result.citations)}):")
     for citation in result.citations:
-        print(f"  \"{citation.text}\" -> {', '.join(citation.evidence_ids)}")
+        print(f'  "{citation.text}" -> {", ".join(citation.evidence_ids)}')
     if report_payload["uncited_evidence_ids"]:
         print(f"\nEvidence provided but not cited: {report_payload['uncited_evidence_ids']}")
     if missing_required:

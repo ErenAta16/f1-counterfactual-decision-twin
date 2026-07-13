@@ -1,5 +1,7 @@
 # ApexMind: F1 Counterfactual Decision Twin
 
+[![Tests](https://github.com/ErenAta16/f1-counterfactual-decision-twin/actions/workflows/tests.yml/badge.svg)](https://github.com/ErenAta16/f1-counterfactual-decision-twin/actions/workflows/tests.yml)
+
 An offline research laboratory for analysing Formula 1 strategy decisions from public data. At a decision point, ApexMind compares counterfactual options such as *pit now*, *extend the stint*, and *protect track position* under explicit assumptions, uncertainty, and FIA-rule constraints.
 
 > Status: **Phases 0-5 implemented for v1 scope (data fidelity, predictive foundation, counterfactual simulator, constrained decision engine, evidence interface). See `docs/TECHNICAL_REPORT.md` for the consolidated results and an independent reproducibility checklist.**
@@ -11,6 +13,27 @@ This is not a live pit-wall tool and it does not claim access to team telemetry.
 ## Why this project
 
 The 2026 F1 regulations place greater emphasis on energy management and active aerodynamics. The project will combine public race timing and telemetry with a probabilistic tyre/pace model, a Monte Carlo race simulator, constrained optimisation, and evidence-grounded natural-language explanations.
+
+## Quickstart
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
+.\.venv\Scripts\python.exe -m pytest -q          # 116 tests, no network required
+
+.\.venv\Scripts\apexmind.exe ingest --benchmark all --data-dir D:\apexmind-data
+.\.venv\Scripts\apexmind.exe decide --reference-benchmark bahrain-2024 --data-dir D:\apexmind-data
+```
+
+`decide` is the fastest way to see the whole pipeline (pace model,
+simulator, and legal-strategy search) produce a real result. Generating
+a cited natural-language explanation of that result
+(`apexmind explain`) additionally needs a Cohere API key — copy
+`.env.example` to `.env` and fill it in, or set `COHERE_API_KEY` as an
+environment variable; `.env` is git-ignored and the key is never
+committed. The full command reference and a numbered, independently
+reproducible verification checklist are in
+[`docs/TECHNICAL_REPORT.md`](docs/TECHNICAL_REPORT.md).
 
 ## Repository map
 

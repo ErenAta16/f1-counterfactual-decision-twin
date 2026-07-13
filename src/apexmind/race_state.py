@@ -117,9 +117,11 @@ def build_lap_state(
             "is_accurate": laps["IsAccurate"].astype("boolean"),
         }
     )
-    return state.loc[:, RACE_STATE_COLUMNS].sort_values(
-        ["driver", "lap_number"], kind="stable"
-    ).reset_index(drop=True)
+    return (
+        state.loc[:, RACE_STATE_COLUMNS]
+        .sort_values(["driver", "lap_number"], kind="stable")
+        .reset_index(drop=True)
+    )
 
 
 def validate_lap_state(state: pd.DataFrame) -> None:

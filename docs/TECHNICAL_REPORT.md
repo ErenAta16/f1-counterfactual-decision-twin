@@ -45,7 +45,7 @@ against real data. `apexmind` is a single Python package
 | Phase | Record | Headline result |
 |---|---|---|
 | 1 — Data fidelity | `docs/DATA_FOUNDATION.md` | Three benchmark races ingested and independently verified; exact row counts reproduced fresh from a clean clone (1,129 / 1,088 / 1,343 lap-state rows). |
-| 2 — Predictive foundation | `docs/PACE_MODEL.md` | Bayesian pace model beats the naive baseline on the primary hold-out; MAE more than halved (1.173s &rarr; 0.606s) after fixing a fuel/tyre-wear confound and, separately, excluding Safety-Car-restart laps that were also being misread as settled pace. The second fix partially repaired a calibration regression the first one introduced on `singapore-2023` — narrowed, not eliminated. |
+| 2 — Predictive foundation | `docs/PACE_MODEL.md` | Bayesian pace model beats the naive baseline on the primary hold-out; MAE more than halved (1.173s &rarr; 0.606s) after fixing a fuel/tyre-wear confound and, separately, excluding Safety-Car-restart laps that were also being misread as settled pace. The second fix partially repaired a calibration regression the first one introduced on `singapore-2023` — narrowed, not eliminated. A fourth investigation found `dutch-2023`'s "worse than baseline" RMSE is not a bug: it beats baseline on the 79% of that hold-out run on dry compounds, and only loses on the pooled number because of a compound with zero training-set representation. |
 | 3 — Counterfactual simulator | `docs/SIMULATOR.md` | Single-car Monte Carlo simulator; bit-for-bit reproducible across independent process runs; real Safety Car episodes extracted and used for context. |
 | 4 — Constrained decision engine | `docs/DECISION_ENGINE.md` | Exact dynamic-programming optimiser; Article B6.3.6 encoded from the primary FIA source document (quoted, hashed); winning strategy beats both fixed baselines with a 95% CI excluding zero on all three benchmarks. |
 | 5 — Evidence interface | `docs/EVIDENCE_INTERFACE.md` | Complete for v1 scope. Every generated explanation across three real runs cited only real evidence items; a live-API bug (whitespace in document ids) was found and fixed; a minimal replay interface renders real track data alongside the cited explanation; explanation-quality tests cover abstention and safety-critical citation coverage, not yet full claim-level faithfulness. |
@@ -126,7 +126,7 @@ above, and `.gitignore` excludes it by default (`work/`, `data/`).
 
 ## What to check, as an independent reviewer
 
-1. Run steps 1-2 above on a fresh clone and confirm 84 tests pass and
+1. Run steps 1-2 above on a fresh clone and confirm 86 tests pass and
    `ruff check` is clean.
 2. Run step 3 and confirm the row counts printed match the table in
    `docs/DATA_FOUNDATION.md`.
