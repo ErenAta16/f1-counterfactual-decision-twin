@@ -25,6 +25,7 @@ from apexmind.evaluation import (
 )
 from apexmind.evidence_interface import (
     CohereClient,
+    assess_explanation_coverage,
     build_decision_evidence,
     generate_explanation,
     load_cohere_api_key,
@@ -43,6 +44,7 @@ from apexmind.paths import DataPaths, default_data_root
 from apexmind.quality import write_quality_report
 from apexmind.race_state import build_lap_state, validate_lap_state
 from apexmind.regulations import TYRE_COMPOUND_RULE, is_legal_strategy
+from apexmind.replay import build_replay_html, stints_to_segments
 from apexmind.safety_car import SafetyCarScenario, extract_safety_car_episodes
 from apexmind.simulator import Stint, StrategyPlan, run_monte_carlo, summarize_simulations
 
@@ -170,6 +172,23 @@ def _parser() -> argparse.ArgumentParser:
         type=Path,
         default=default_data_root(),
         help="local, untracked root containing a previously written decision report",
+    )
+
+    replay = subparsers.add_parser(
+        "replay",
+        help="render a single-file HTML replay: real track status, chosen strategy, and evidence",
+    )
+    replay.add_argument(
+        "--reference-benchmark",
+        choices=[benchmark.identifier for benchmark in BENCHMARK_RACES],
+        default=DEFAULT_HOLDOUT_BENCHMARK,
+        help=f"benchmark to render (default: {DEFAULT_HOLDOUT_BENCHMARK})",
+    )
+    replay.add_argument(
+        "--data-dir",
+        type=Path,
+        default=default_data_root(),
+        help="local, untracked root containing previously written decision/explanation reports",
     )
     return parser
 
@@ -597,6 +616,7 @@ def _explain(reference_benchmark_id: str, data_dir: Path) -> int:
         benchmark=reference_benchmark_id,
     )
     result = generate_explanation(evidence, question, client)
+    missing_required = assess_explanation_coverage(evidence, result)
 
     report_path = paths.explanation_reports / f"explanation-{reference_benchmark_id}.json"
     report_path.parent.mkdir(parents=True, exist_ok=True)
@@ -614,6 +634,7 @@ def _explain(reference_benchmark_id: str, data_dir: Path) -> int:
         ],
         "cited_evidence_ids": sorted(result.cited_evidence_ids),
         "uncited_evidence_ids": sorted({item.id for item in evidence} - result.cited_evidence_ids),
+        "missing_required_evidence_ids": list(missing_required),
     }
     report_path.write_text(json.dumps(report_payload, indent=2) + "\n", encoding="utf-8")
 
@@ -627,7 +648,79 @@ def _explain(reference_benchmark_id: str, data_dir: Path) -> int:
         print(f"  \"{citation.text}\" -> {', '.join(citation.evidence_ids)}")
     if report_payload["uncited_evidence_ids"]:
         print(f"\nEvidence provided but not cited: {report_payload['uncited_evidence_ids']}")
+    if missing_required:
+        print(
+            f"\nWARNING: explanation did not cite safety-critical evidence: {missing_required}. "
+            "Treat this explanation as incomplete."
+        )
     print(f"\nReport written to {report_path}")
+    return 0
+
+
+def _replay(reference_benchmark_id: str, data_dir: Path) -> int:
+    paths = DataPaths.from_root(data_dir)
+    paths.create()
+
+    decision_report_path = paths.decision_reports / f"decision-{reference_benchmark_id}.json"
+    if not decision_report_path.exists():
+        raise SystemExit(
+            f"No decision report for '{reference_benchmark_id}' at {decision_report_path}. "
+            "Run 'apexmind decide' first."
+        )
+    decision_report = json.loads(decision_report_path.read_text(encoding="utf-8"))
+    evidence = build_decision_evidence(decision_report)
+
+    explanation_report_path = (
+        paths.explanation_reports / f"explanation-{reference_benchmark_id}.json"
+    )
+    if explanation_report_path.exists():
+        explanation_report = json.loads(explanation_report_path.read_text(encoding="utf-8"))
+        explanation_text = explanation_report["explanation"]
+        citations = tuple(explanation_report["citations"])
+    else:
+        explanation_text = (
+            "No explanation has been generated yet for this benchmark. "
+            "Run 'apexmind explain' first to include a cited narrative here."
+        )
+        citations = ()
+
+    race_control = pd.read_parquet(
+        paths.processed / f"{reference_benchmark_id}-race-control.parquet"
+    )
+    safety_car_episodes = extract_safety_car_episodes(race_control)
+
+    chosen_name = decision_report["chosen_strategy"]
+    chosen_plan = next(
+        candidate
+        for candidate in decision_report["optimiser_candidates"]
+        if candidate["name"] == chosen_name
+    )
+    chosen_segments = stints_to_segments(tuple(chosen_plan["stints"]))
+
+    html = build_replay_html(
+        benchmark_id=reference_benchmark_id,
+        total_laps=decision_report["total_laps"],
+        safety_car_episodes=safety_car_episodes,
+        chosen_strategy_name=chosen_name,
+        chosen_segments=chosen_segments,
+        evidence=tuple(
+            {"id": item.id, "title": item.title, "evidence_class": item.evidence_class}
+            for item in evidence
+        ),
+        explanation_text=explanation_text,
+        citations=citations,
+    )
+
+    report_path = paths.replay_reports / f"replay-{reference_benchmark_id}.html"
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(html, encoding="utf-8")
+
+    print(f"Reference benchmark: {reference_benchmark_id}")
+    print(f"Real Safety Car/VSC episodes: {safety_car_episodes}")
+    print(f"Chosen strategy: {chosen_name}")
+    if not explanation_report_path.exists():
+        print("(no 'apexmind explain' report found; replay page has a placeholder explanation)")
+    print(f"Replay page written to {report_path}")
     return 0
 
 
@@ -658,6 +751,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     if args.command == "explain":
         return _explain(args.reference_benchmark, args.data_dir)
+    if args.command == "replay":
+        return _replay(args.reference_benchmark, args.data_dir)
     raise AssertionError(f"Unhandled command: {args.command}")
 
 
