@@ -848,23 +848,6 @@ def _plot(
 
     stats = _reference_race_stats(all_states, all_race_control, full_state, reference_benchmark_id)
 
-    # The dry slick compounds (SOFT/MEDIUM/HARD) have comparable support
-    # across all three benchmarks; INTERMEDIATE/WET only have laps from
-    # dutch-2023's rain-affected stints, so their predictive band widens
-    # sharply past that benchmark's observed tyre life and dominates the
-    # chart without adding a readable signal. Capping at a realistic
-    # single-stint length keeps this the intended headline chart; the
-    # function itself still accepts any compound/tyre-life combination
-    # for a caller who wants the full picture (see apexmind.viz).
-    tyre_ax = plot_tyre_degradation(
-        stats.posterior,
-        compounds=("SOFT", "MEDIUM", "HARD"),
-        max_tyre_life=min(stats.max_observed_tyre_life, 35),
-    )
-    tyre_path = paths.plot_reports / f"{reference_benchmark_id}-tyre-degradation.png"
-    tyre_ax.figure.savefig(tyre_path, dpi=150, bbox_inches="tight")
-    written_paths.append(tyre_path)
-
     laps_with_delta = {
         benchmark_id: remove_pace_outliers(
             add_race_progress(
@@ -885,10 +868,6 @@ def _plot(
     test_design, test_target, _ = build_pace_design_matrix(test_laps)
     holdout_posterior = fit_bayesian_pace_model(train_design, train_target)
     test_mean, test_variance = predict(holdout_posterior, test_design)
-    calibration_ax = plot_calibration_reliability(test_target.to_numpy(), test_mean, test_variance)
-    calibration_path = paths.plot_reports / f"{holdout_benchmark_id}-calibration-reliability.png"
-    calibration_ax.figure.savefig(calibration_path, dpi=150, bbox_inches="tight")
-    written_paths.append(calibration_path)
 
     safety_car_scenario = SafetyCarScenario() if use_safety_car else None
     strategies = _example_strategies(stats.total_laps)
@@ -901,10 +880,42 @@ def _plot(
         seed=seed,
         safety_car_scenario=safety_car_scenario,
     )
-    mc_ax = plot_monte_carlo_outcomes(mc_results)
-    mc_path = paths.plot_reports / f"{reference_benchmark_id}-monte-carlo-outcomes.png"
-    mc_ax.figure.savefig(mc_path, dpi=150, bbox_inches="tight")
-    written_paths.append(mc_path)
+
+    # Each chart is rendered once per mode rather than once total: a chart
+    # embedded in a GitHub README sits on whichever surface the viewer's OS
+    # theme picks, and a light-only PNG reads as broken on a dark page.
+    for mode in ("light", "dark"):
+        # The dry slick compounds (SOFT/MEDIUM/HARD) have comparable support
+        # across all three benchmarks; INTERMEDIATE/WET only have laps from
+        # dutch-2023's rain-affected stints, so their predictive band widens
+        # sharply past that benchmark's observed tyre life and dominates the
+        # chart without adding a readable signal. Capping at a realistic
+        # single-stint length keeps this the intended headline chart; the
+        # function itself still accepts any compound/tyre-life combination
+        # for a caller who wants the full picture (see apexmind.viz).
+        tyre_ax = plot_tyre_degradation(
+            stats.posterior,
+            compounds=("SOFT", "MEDIUM", "HARD"),
+            max_tyre_life=min(stats.max_observed_tyre_life, 35),
+            mode=mode,
+        )
+        tyre_path = paths.plot_reports / f"{reference_benchmark_id}-tyre-degradation-{mode}.png"
+        tyre_ax.figure.savefig(tyre_path, bbox_inches="tight")
+        written_paths.append(tyre_path)
+
+        calibration_ax = plot_calibration_reliability(
+            test_target.to_numpy(), test_mean, test_variance, mode=mode
+        )
+        calibration_path = (
+            paths.plot_reports / f"{holdout_benchmark_id}-calibration-reliability-{mode}.png"
+        )
+        calibration_ax.figure.savefig(calibration_path, bbox_inches="tight")
+        written_paths.append(calibration_path)
+
+        mc_ax = plot_monte_carlo_outcomes(mc_results, mode=mode)
+        mc_path = paths.plot_reports / f"{reference_benchmark_id}-monte-carlo-outcomes-{mode}.png"
+        mc_ax.figure.savefig(mc_path, bbox_inches="tight")
+        written_paths.append(mc_path)
 
     for path in written_paths:
         print(f"Wrote {path}")

@@ -9,11 +9,20 @@ An offline research laboratory for analysing Formula 1 strategy decisions from p
 > Status: **Phases 0-5 implemented for v1 scope (data fidelity, predictive foundation, counterfactual simulator, constrained decision engine, evidence interface). See `docs/TECHNICAL_REPORT.md` for the consolidated results and an independent reproducibility checklist.**
 
 <p align="center">
-  <img src="docs/images/tyre-degradation.png" width="32%" alt="Tyre degradation by compound, with a 95% predictive band, fitted on real lap data">
-  <img src="docs/images/calibration-reliability.png" width="32%" alt="Calibration reliability diagram: nominal confidence vs. observed coverage">
-  <img src="docs/images/monte-carlo-outcomes.png" width="32%" alt="Monte Carlo total-race-time distribution, one histogram per candidate strategy">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/tyre-degradation-dark.png">
+    <img src="docs/images/tyre-degradation-light.png" width="32%" alt="Tyre degradation by compound, with a 95% predictive band, fitted on real lap data">
+  </picture>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/calibration-reliability-dark.png">
+    <img src="docs/images/calibration-reliability-light.png" width="32%" alt="Calibration reliability diagram: nominal confidence vs. observed coverage">
+  </picture>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/monte-carlo-outcomes-dark.png">
+    <img src="docs/images/monte-carlo-outcomes-light.png" width="32%" alt="Monte Carlo total-race-time distribution, one histogram per candidate strategy">
+  </picture>
 </p>
-<p align="center"><sub>All three charts are generated from real ingested race data by <code>apexmind plot</code> — nothing here is a mock-up.</sub></p>
+<p align="center"><sub>All three charts are generated from real ingested race data by <code>apexmind plot</code> — nothing here is a mock-up. Colours are validated for colour-vision-deficiency separation in both themes, not hand-picked.</sub></p>
 
 ## Why this project
 
