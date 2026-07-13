@@ -10,6 +10,7 @@ from apexmind.evaluation import (
     gaussian_crps,
     interval_coverage,
     mean_absolute_error,
+    paired_mean_difference_ci,
     root_mean_squared_error,
     temporal_holdout_split,
 )
@@ -74,3 +75,40 @@ def test_interval_coverage_matches_nominal_confidence_on_well_specified_data() -
     coverage = interval_coverage(y_true, mean, variance, confidence=0.95)
 
     assert coverage == pytest.approx(0.95, abs=0.01)
+
+
+def test_paired_mean_difference_ci_detects_a_real_shift() -> None:
+    rng = np.random.default_rng(7)
+    shared_noise = rng.normal(scale=1.0, size=5000)
+    # A common per-draw noise term (as `run_monte_carlo`'s shared Safety
+    # Car draw would produce) plus a small independent residual, so the
+    # paired difference has a real but non-zero variance to estimate.
+    a = 100.0 + shared_noise + rng.normal(scale=0.2, size=5000)
+    b = 95.0 + shared_noise + rng.normal(scale=0.2, size=5000)
+
+    mean_difference, lower, upper = paired_mean_difference_ci(a, b, confidence=0.95)
+
+    assert mean_difference == pytest.approx(5.0, abs=0.05)
+    assert lower < mean_difference < upper
+    assert lower > 0  # a genuine paired difference should exclude zero here.
+
+
+def test_paired_mean_difference_ci_is_wide_when_there_is_no_real_difference() -> None:
+    rng = np.random.default_rng(11)
+    a = rng.normal(loc=100.0, scale=5.0, size=200)
+    b = rng.normal(loc=100.0, scale=5.0, size=200)
+
+    _mean_difference, lower, upper = paired_mean_difference_ci(a, b, confidence=0.95)
+
+    # Independent, identically distributed samples: no reason to expect
+    # the interval to reliably exclude zero.
+    assert lower < 0 < upper
+
+
+def test_paired_mean_difference_ci_rejects_invalid_input() -> None:
+    with pytest.raises(EvaluationError):
+        paired_mean_difference_ci(np.array([1.0, 2.0]), np.array([1.0]))
+    with pytest.raises(EvaluationError):
+        paired_mean_difference_ci(np.array([1.0]), np.array([1.0]))
+    with pytest.raises(EvaluationError):
+        paired_mean_difference_ci(np.array([1.0, 2.0]), np.array([1.0, 2.0]), confidence=1.5)
