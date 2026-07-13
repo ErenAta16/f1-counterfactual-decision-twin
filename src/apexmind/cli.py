@@ -27,6 +27,7 @@ from apexmind.fastf1_source import load_race
 from apexmind.manifest import write_manifest
 from apexmind.pace_features import (
     add_pace_delta,
+    add_race_progress,
     build_pace_design_matrix,
     remove_pace_outliers,
     select_green_flag_laps,
@@ -223,7 +224,12 @@ def _evaluate(holdout_benchmark_id: str, data_dir: Path) -> int:
     print(pit_loss.to_string(index=False))
 
     laps_with_delta = {
-        benchmark_id: remove_pace_outliers(add_pace_delta(select_green_flag_laps(state)))
+        benchmark_id: remove_pace_outliers(
+            add_race_progress(
+                add_pace_delta(select_green_flag_laps(state)),
+                session_total_laps=int(state["lap_number"].max()),
+            )
+        )
         for benchmark_id, state in all_states.items()
     }
     train_laps, test_laps = temporal_holdout_split(
@@ -332,7 +338,12 @@ def _reference_race_stats(
 
     laps_with_delta = pd.concat(
         [
-            remove_pace_outliers(add_pace_delta(select_green_flag_laps(state)))
+            remove_pace_outliers(
+                add_race_progress(
+                    add_pace_delta(select_green_flag_laps(state)),
+                    session_total_laps=int(state["lap_number"].max()),
+                )
+            )
             for state in all_states.values()
         ],
         ignore_index=True,
