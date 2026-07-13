@@ -342,14 +342,30 @@ def test_exclude_safety_car_restart_laps_drops_only_the_sc_restart_lap() -> None
     )
     rc = _race_control(
         [
-            dict(event_time="2023-01-01T00:00:00", category="SafetyCar",
-                 message="SAFETY CAR DEPLOYED", lap=19),
-            dict(event_time="2023-01-01T00:02:00", category="SafetyCar",
-                 message="SAFETY CAR IN THIS LAP", lap=22),
-            dict(event_time="2023-01-01T00:10:00", category="SafetyCar",
-                 message="VIRTUAL SAFETY CAR DEPLOYED", lap=44),
-            dict(event_time="2023-01-01T00:11:00", category="SafetyCar",
-                 message="VIRTUAL SAFETY CAR ENDING", lap=45),
+            dict(
+                event_time="2023-01-01T00:00:00",
+                category="SafetyCar",
+                message="SAFETY CAR DEPLOYED",
+                lap=19,
+            ),
+            dict(
+                event_time="2023-01-01T00:02:00",
+                category="SafetyCar",
+                message="SAFETY CAR IN THIS LAP",
+                lap=22,
+            ),
+            dict(
+                event_time="2023-01-01T00:10:00",
+                category="SafetyCar",
+                message="VIRTUAL SAFETY CAR DEPLOYED",
+                lap=44,
+            ),
+            dict(
+                event_time="2023-01-01T00:11:00",
+                category="SafetyCar",
+                message="VIRTUAL SAFETY CAR ENDING",
+                lap=45,
+            ),
         ]
     )
 

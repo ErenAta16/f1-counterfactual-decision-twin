@@ -9,9 +9,7 @@ class BaselineError(ValueError):
     """Raised when a baseline cannot be computed from the supplied data."""
 
 
-def naive_driver_compound_baseline(
-    train_laps: pd.DataFrame, test_laps: pd.DataFrame
-) -> pd.Series:
+def naive_driver_compound_baseline(train_laps: pd.DataFrame, test_laps: pd.DataFrame) -> pd.Series:
     """Predict each test lap's pace delta as the median seen for that driver and compound.
 
     Falls back to the compound-wide median, then the train-wide median, when

@@ -166,10 +166,17 @@ def optimise_strategies(
         # lap, not once per (compound, tyre life) combination up front.
         pace_at_this_lap = _pace_at_lap(posterior, lap, total_laps, compounds)
 
-        def _offer(state: _DpState, cost: float, parent: _DpState, pit_stop: bool) -> None:
-            existing = next_frontier.get(state)
+        def _offer(
+            state: _DpState,
+            cost: float,
+            parent: _DpState,
+            pit_stop: bool,
+            *,
+            _frontier: dict[_DpState, _DpEntry] = next_frontier,
+        ) -> None:
+            existing = _frontier.get(state)
             if existing is None or cost < existing.cost:
-                next_frontier[state] = _DpEntry(cost, parent, pit_stop)
+                _frontier[state] = _DpEntry(cost, parent, pit_stop)
 
         for state, entry in frontier.items():
             new_tyre_life = state.tyre_life + 1

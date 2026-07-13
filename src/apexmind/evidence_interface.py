@@ -170,9 +170,7 @@ def build_decision_evidence(decision_report: dict[str, Any]) -> tuple[EvidenceIt
     )
 
     summary_row = next(
-        row
-        for row in decision_report["monte_carlo_summary"]
-        if row["strategy_name"] == chosen_name
+        row for row in decision_report["monte_carlo_summary"] if row["strategy_name"] == chosen_name
     )
     items.append(
         EvidenceItem(
@@ -331,9 +329,7 @@ def generate_explanation(
 
     message = response.get("message", {})
     content_blocks = message.get("content", [])
-    text = "".join(
-        block.get("text", "") for block in content_blocks if block.get("type") == "text"
-    )
+    text = "".join(block.get("text", "") for block in content_blocks if block.get("type") == "text")
 
     evidence_ids = {item.id for item in evidence}
     citations: list[Citation] = []
