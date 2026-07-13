@@ -23,6 +23,12 @@ from apexmind.evaluation import (
     temporal_holdout_split,
     write_calibration_report,
 )
+from apexmind.evidence_interface import (
+    CohereClient,
+    build_decision_evidence,
+    generate_explanation,
+    load_cohere_api_key,
+)
 from apexmind.fastf1_source import load_race
 from apexmind.manifest import write_manifest
 from apexmind.pace_features import (
@@ -147,6 +153,23 @@ def _parser() -> argparse.ArgumentParser:
         type=Path,
         default=default_data_root(),
         help="local, untracked root containing previously ingested lap-state artefacts",
+    )
+
+    explain = subparsers.add_parser(
+        "explain",
+        help="generate a cited, evidence-grounded explanation of a 'decide' report",
+    )
+    explain.add_argument(
+        "--reference-benchmark",
+        choices=[benchmark.identifier for benchmark in BENCHMARK_RACES],
+        default=DEFAULT_HOLDOUT_BENCHMARK,
+        help=f"benchmark whose decision report to explain (default: {DEFAULT_HOLDOUT_BENCHMARK})",
+    )
+    explain.add_argument(
+        "--data-dir",
+        type=Path,
+        default=default_data_root(),
+        help="local, untracked root containing a previously written decision report",
     )
     return parser
 
@@ -545,6 +568,69 @@ def _decide(
     return 0
 
 
+QUESTION_TEMPLATE = (
+    "Explain why the '{chosen_strategy}' strategy was chosen for {benchmark}. "
+    "Cover: what the FIA rule requires and why the strategy is legal, the pace "
+    "and Monte Carlo evidence behind the choice, how it compares to the baseline "
+    "strategies, and which parts of the answer are simulated assumptions rather "
+    "than observed or inferred facts. Cite the specific evidence for every claim."
+)
+
+
+def _explain(reference_benchmark_id: str, data_dir: Path) -> int:
+    paths = DataPaths.from_root(data_dir)
+    paths.create()
+
+    decision_report_path = paths.decision_reports / f"decision-{reference_benchmark_id}.json"
+    if not decision_report_path.exists():
+        raise SystemExit(
+            f"No decision report for '{reference_benchmark_id}' at {decision_report_path}. "
+            "Run 'apexmind decide' first."
+        )
+    decision_report = json.loads(decision_report_path.read_text(encoding="utf-8"))
+
+    evidence = build_decision_evidence(decision_report)
+    api_key = load_cohere_api_key()
+    client = CohereClient(api_key)
+    question = QUESTION_TEMPLATE.format(
+        chosen_strategy=decision_report["chosen_strategy"],
+        benchmark=reference_benchmark_id,
+    )
+    result = generate_explanation(evidence, question, client)
+
+    report_path = paths.explanation_reports / f"explanation-{reference_benchmark_id}.json"
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_payload = {
+        "reference_benchmark_id": reference_benchmark_id,
+        "question": question,
+        "evidence": [
+            {"id": item.id, "title": item.title, "evidence_class": item.evidence_class}
+            for item in evidence
+        ],
+        "explanation": result.text,
+        "citations": [
+            {"text": citation.text, "evidence_ids": list(citation.evidence_ids)}
+            for citation in result.citations
+        ],
+        "cited_evidence_ids": sorted(result.cited_evidence_ids),
+        "uncited_evidence_ids": sorted({item.id for item in evidence} - result.cited_evidence_ids),
+    }
+    report_path.write_text(json.dumps(report_payload, indent=2) + "\n", encoding="utf-8")
+
+    print(f"Reference benchmark: {reference_benchmark_id}")
+    print(f"\nEvidence ledger ({len(evidence)} items):")
+    for item in evidence:
+        print(f"  [{item.evidence_class:>9}] {item.id}: {item.title}")
+    print(f"\n{result.text}")
+    print(f"\nCitations ({len(result.citations)}):")
+    for citation in result.citations:
+        print(f"  \"{citation.text}\" -> {', '.join(citation.evidence_ids)}")
+    if report_payload["uncited_evidence_ids"]:
+        print(f"\nEvidence provided but not cited: {report_payload['uncited_evidence_ids']}")
+    print(f"\nReport written to {report_path}")
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the ApexMind command-line interface."""
 
@@ -570,6 +656,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             not args.no_safety_car,
             args.data_dir,
         )
+    if args.command == "explain":
+        return _explain(args.reference_benchmark, args.data_dir)
     raise AssertionError(f"Unhandled command: {args.command}")
 
 

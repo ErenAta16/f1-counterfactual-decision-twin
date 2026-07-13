@@ -13,3 +13,4 @@ def test_data_paths_create_local_storage(tmp_path) -> None:
     assert paths.evaluation_reports.is_dir()
     assert paths.simulation_reports.is_dir()
     assert paths.decision_reports.is_dir()
+    assert paths.explanation_reports.is_dir()
