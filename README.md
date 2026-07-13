@@ -1,3 +1,8 @@
+<p align="center">
+  <img src="docs/images/banner.jpg" alt="ApexMind: F1 Counterfactual Decision Twin — a concept illustration contrasting a real pit-stop decision against a simulated counterfactual" width="100%">
+</p>
+<p align="center"><sub>Concept illustration, not a data claim — the real, data-generated results are in the charts below and throughout this README.</sub></p>
+
 # ApexMind: F1 Counterfactual Decision Twin
 
 [![Tests](https://github.com/ErenAta16/f1-counterfactual-decision-twin/actions/workflows/tests.yml/badge.svg)](https://github.com/ErenAta16/f1-counterfactual-decision-twin/actions/workflows/tests.yml)
