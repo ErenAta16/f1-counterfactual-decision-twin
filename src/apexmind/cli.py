@@ -18,6 +18,7 @@ from apexmind.evaluation import (
     gaussian_crps,
     interval_coverage,
     mean_absolute_error,
+    metrics_by_compound_class,
     paired_mean_difference_ci,
     root_mean_squared_error,
     temporal_holdout_split,
@@ -321,6 +322,12 @@ def _evaluate(holdout_benchmark_id: str, data_dir: Path) -> int:
         )
         for level in (0.5, 0.8, 0.95)
     }
+    baseline_by_class = metrics_by_compound_class(
+        test_laps["compound"], test_target.to_numpy(), baseline_pred
+    )
+    model_by_class = metrics_by_compound_class(
+        test_laps["compound"], test_target.to_numpy(), model_mean
+    )
 
     report_path = paths.evaluation_reports / f"pace-model-holdout-{holdout_benchmark_id}.json"
     write_calibration_report(
@@ -332,6 +339,8 @@ def _evaluate(holdout_benchmark_id: str, data_dir: Path) -> int:
         baseline_metrics=baseline_metrics,
         model_metrics=model_metrics,
         coverage=coverage,
+        baseline_metrics_by_compound_class=baseline_by_class,
+        model_metrics_by_compound_class=model_by_class,
     )
 
     print(
@@ -344,6 +353,17 @@ def _evaluate(holdout_benchmark_id: str, data_dir: Path) -> int:
         f"CRPS={model_metrics['crps']:.3f}s"
     )
     print(f"Coverage (nominal -> observed): {coverage}")
+    print("\nBy compound class (a pooled metric can hide a split result):")
+    for class_label in sorted(set(baseline_by_class) | set(model_by_class)):
+        b = baseline_by_class.get(class_label)
+        m = model_by_class.get(class_label)
+        if b is None or m is None:
+            continue
+        print(
+            f"  {class_label:>20} (n={b['row_count']}): "
+            f"baseline MAE={b['mae']:.3f}s RMSE={b['rmse']:.3f}s | "
+            f"model MAE={m['mae']:.3f}s RMSE={m['rmse']:.3f}s"
+        )
     print(f"Report written to {report_path}")
     return 0
 
