@@ -45,25 +45,27 @@ against real data. `apexmind` is a single Python package
 | Phase | Record | Headline result |
 |---|---|---|
 | 1 — Data fidelity | `docs/DATA_FOUNDATION.md` | Three benchmark races ingested and independently verified; exact row counts reproduced fresh from a clean clone (1,129 / 1,088 / 1,343 lap-state rows). |
-| 2 — Predictive foundation | `docs/PACE_MODEL.md` | Bayesian pace model beats the naive baseline on the primary hold-out; MAE roughly halved (1.173s &rarr; 0.642s) after a fuel/tyre-wear confound was found and fixed. `singapore-2023` calibration regressed as a result — named, not hidden. |
+| 2 — Predictive foundation | `docs/PACE_MODEL.md` | Bayesian pace model beats the naive baseline on the primary hold-out; MAE more than halved (1.173s &rarr; 0.606s) after fixing a fuel/tyre-wear confound and, separately, excluding Safety-Car-restart laps that were also being misread as settled pace. The second fix partially repaired a calibration regression the first one introduced on `singapore-2023` — narrowed, not eliminated. |
 | 3 — Counterfactual simulator | `docs/SIMULATOR.md` | Single-car Monte Carlo simulator; bit-for-bit reproducible across independent process runs; real Safety Car episodes extracted and used for context. |
 | 4 — Constrained decision engine | `docs/DECISION_ENGINE.md` | Exact dynamic-programming optimiser; Article B6.3.6 encoded from the primary FIA source document (quoted, hashed); winning strategy beats both fixed baselines with a 95% CI excluding zero on all three benchmarks. |
-| 5 — Evidence interface (in progress) | `docs/EVIDENCE_INTERFACE.md` | Every generated explanation across three real runs cited only real evidence items; a live-API bug (whitespace in document ids) was found and fixed; replay interface built; explanation-quality tests cover abstention and safety-critical citation coverage, not yet full claim-level faithfulness. |
+| 5 — Evidence interface | `docs/EVIDENCE_INTERFACE.md` | Complete for v1 scope. Every generated explanation across three real runs cited only real evidence items; a live-API bug (whitespace in document ids) was found and fixed; a minimal replay interface renders real track data alongside the cited explanation; explanation-quality tests cover abstention and safety-critical citation coverage, not yet full claim-level faithfulness. |
 
 ## What is honestly unresolved
 
 This project's evidence-contract commitment means naming what still does
 not work, not just what does:
 
-- **`singapore-2023` calibration.** The Phase 2 fuel/tyre fix that helped
-  two benchmarks measurably worsened this one's interval calibration
-  (`docs/PACE_MODEL.md`, "Second iteration"). Not reverted, because the
-  point-accuracy gain elsewhere and the root-cause diagnosis were judged
-  more valuable than reverting to a known-confounded model; tracked as an
-  open item.
+- **`singapore-2023` calibration.** The Phase 2 fuel/tyre fix measurably
+  worsened this one's interval calibration; a follow-up fix (excluding
+  Safety Car restart laps, `docs/PACE_MODEL.md`'s "Third iteration")
+  narrowed the gap at every confidence level but did not close it (95%
+  coverage: 79% &rarr; 81% against a 95% nominal target). Tracked as an
+  open item, not claimed as solved.
 - **`dutch-2023` RMSE.** Worse than baseline on this hold-out under every
   version of the pace model tried so far — the project's hardest
-  benchmark by design (rain, a red flag, tyre-compound transitions).
+  benchmark by design (rain, a red flag, tyre-compound transitions). The
+  Safety Car restart-lap fix moved this benchmark by about 1%, within
+  noise, in neither a clearly better nor worse direction.
 - **The `SOFT` degradation slope is still small.** Fixing the fuel/tyre
   confound corrected its *sign*, not its *magnitude* — a genuine, separate
   limitation of a linear, single-regime model on this data volume.
@@ -116,12 +118,12 @@ above, and `.gitignore` excludes it by default (`work/`, `data/`).
 
 ## What to check, as an independent reviewer
 
-1. Run steps 1-2 above on a fresh clone and confirm 81 tests pass and
+1. Run steps 1-2 above on a fresh clone and confirm 84 tests pass and
    `ruff check` is clean.
 2. Run step 3 and confirm the row counts printed match the table in
    `docs/DATA_FOUNDATION.md`.
 3. Run step 4 and confirm the MAE/RMSE/coverage numbers match
-   `docs/PACE_MODEL.md`'s "Second iteration" table for `bahrain-2024`.
+   `docs/PACE_MODEL.md`'s "Third iteration" table for `bahrain-2024`.
 4. Run step 6 twice with the same `--seed` and confirm identical output
    (`docs/DECISION_ENGINE.md` and `docs/SIMULATOR.md` both report this
    check; it is not a one-time claim).

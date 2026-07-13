@@ -98,9 +98,15 @@ the answer.
 
 | Reference benchmark | Optimiser's plan | vs 1-stop (medium/hard) | vs 2-stop (soft/soft/hard) |
 |---|---|---:|---:|
-| `bahrain-2024` (57 laps) | MEDIUM×20 / SOFT×37 | +13.74s [+13.31, +14.17], significant | +37.76s [+37.35, +38.17], significant |
-| `singapore-2023` (62 laps) | MEDIUM×21 / SOFT×41 | +16.64s [+16.16, +17.13], significant | +54.22s [+53.78, +54.67], significant |
-| `dutch-2023` (72 laps) | MEDIUM×24 / SOFT×48 | +23.49s [+23.01, +23.97], significant | +50.52s [+50.08, +50.96], significant |
+| `bahrain-2024` (57 laps) | MEDIUM×19 / SOFT×38 | +13.79s [+13.37, +14.20], significant | +37.27s [+36.89, +37.65], significant |
+| `singapore-2023` (62 laps) | MEDIUM×20 / SOFT×42 | +16.83s [+16.36, +17.31], significant | +53.66s [+53.25, +54.07], significant |
+| `dutch-2023` (72 laps) | MEDIUM×23 / SOFT×49 | +24.00s [+23.53, +24.48], significant | +49.84s [+49.39, +50.29], significant |
+
+(Re-measured after the Safety Car restart-lap fix in `docs/PACE_MODEL.md`'s
+"Third iteration": the underlying pace model shifted slightly, so the
+exact stint splits moved by a lap or two from the numbers first recorded
+here. The conclusion did not change — legal, statistically significant
+on all three benchmarks.)
 
 Figures are the mean paired advantage in total race time (positive = the
 optimiser's plan is faster), with a 95% confidence interval computed from
@@ -112,16 +118,19 @@ candidate is legal by construction.
 
 ## What this result honestly means, and does not mean
 
-`bahrain-2024` and `singapore-2023`'s optimal plans (37 and 41 laps on
-`SOFT` out of 57 and 62 total) no longer touch the `max_stint_laps` bound
-at all — a genuinely different, more credible result than before, not
-just a smaller version of the same artifact. `dutch-2023`'s plan (48 laps
-on `SOFT`) sits one lap under its 49-lap bound, which is worth naming
-rather than glossing over: it is closer to the boundary than the other
-two, consistent with `docs/PACE_MODEL.md`'s finding that `dutch-2023`
-remains this project's hardest hold-out even after the fix.
+`bahrain-2024` and `singapore-2023`'s optimal plans (38 and 42 laps on
+`SOFT` out of 57 and 62 total) do not touch the `max_stint_laps` bound —
+a genuinely different, more credible result than the original unbounded
+failure, not just a smaller version of the same artifact. `dutch-2023`'s
+plan touches its 49-lap bound exactly, which is worth naming rather than
+glossing over: after the Safety Car restart-lap fix in
+`docs/PACE_MODEL.md`'s "Third iteration," `dutch-2023` is the one
+benchmark where the safety bound is still doing real work, not just
+sitting unused — consistent with `docs/PACE_MODEL.md`'s finding that
+`dutch-2023` remains this project's hardest hold-out even after two
+rounds of fixes.
 
-A 37-to-48-lap single stint on soft tyres is still longer than real F1
+A 38-to-49-lap single stint on soft tyres is still longer than real F1
 strategy typically runs a soft tyre, and that gap has an honest
 explanation rather than a hidden one: `tyre_life_SOFT`'s fitted
 degradation slope (+0.0115 s/lap) is small in absolute terms, a
