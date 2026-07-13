@@ -164,17 +164,125 @@ one for a race with rain, a red flag, and tyre-compound transitions in it —
 exactly the scenario Phase 3's scenario generators will need to represent
 explicitly rather than assume away.
 
+## Second iteration: separating fuel burn-off from tyre wear
+
+Everything above describes the model as it stood at the end of Phase 2.
+This section records a substantial follow-up fix, made during Phase 4
+development, to a limitation Phase 2 had already named but not yet
+addressed: "Tyre age and fuel burn-off are confounded... The `tyre_life`
+coefficient in this model should be read as pace change per lap of tyre
+age and race progress combined, not as an isolated tyre-degradation rate."
+
+### What made it concrete
+
+Phase 4's decision-engine optimiser (`docs/DECISION_ENGINE.md`) searches
+for the strategy with the lowest expected race time, which means it will
+find and exploit any part of the pace model that is wrong, not just the
+parts that happen not to matter. Run against real data, it found one: the
+fitted `tyre_life_SOFT` coefficient was slightly **negative** (-0.0154
+s/lap) — the model believed soft tyres got faster with age. Chasing that
+down to its source confirmed the confound directly rather than leaving it
+as a hypothesis: `tyre_life` and lap number are highly correlated within
+any single stint (a stint's tyre life is, by definition, laps since that
+stint's pit stop), and a car really does get faster over a race as fuel
+burns off, so a model with no separate fuel term has no way to avoid
+attributing some of that "faster over time" signal to whichever compound
+happens to be run.
+
+### The fix, and a second bug it exposed
+
+The fix a Bayesian linear model can actually use is a new covariate that
+is structurally different from `tyre_life`: `race_progress`
+(`lap_number / session_total_laps`, via `add_race_progress` in
+`pace_features.py`). The key property is that `tyre_life` resets to 1 at
+every pit stop, but `race_progress` does not — it climbs monotonically
+across the whole session regardless of how many stops a driver makes.
+Across a pooled dataset where different drivers pit at different laps,
+that difference in *when* each variable resets is what lets a linear
+model identify a fuel-burn slope separately from a tyre-degradation slope,
+rather than folding both into one number.
+
+The first version added `race_progress` as a single column shared across
+every compound — physically reasonable, since fuel burn-off is a property
+of the car, not the tyre. It measurably worked on two of three hold-outs
+(see the table below), but it introduced a second, distinct bug: this
+benchmark set's two dry-only races (`bahrain-2024`, `singapore-2023`)
+contain zero `INTERMEDIATE` or `WET` laps between them, so a *shared*
+race-progress term is estimated entirely from dry-compound evidence and
+then applied, with no shrinkage at all, to `INTERMEDIATE` laps in the
+`dutch-2023` hold-out evaluation that it was never fit on. The consequence
+was concrete and large: the model's single worst residuals on that
+hold-out were all `INTERMEDIATE` laps at lap 67 (race progress ≈0.93,
+shortly after that race's red-flag restart), where a shared fuel-burn term
+learned from bone-dry racing predicted the car should be getting
+*faster*, while the real laps were 11-18 seconds slower than predicted.
+
+The fix for this second bug follows the same pattern already used
+everywhere else in this feature layout: make `race_progress` per-compound
+(`race_progress_SOFT`, `race_progress_MEDIUM`, ...), exactly like
+`tyre_life` already is. A compound with no supporting laps in training
+now shrinks its fuel-effect coefficient back toward the weakly-informative
+prior's zero, the same protection `compound_WET`'s intercept and slope
+already had. Both bugs, and the fix for each, are reproduced directly on
+synthetic data with a known answer in
+`tests/test_pace_features.py::test_race_progress_separates_fuel_effect_from_tyre_wear`
+and `::test_race_progress_does_not_leak_across_compounds_with_no_shared_evidence`.
+
+### Result
+
+| Holdout | Baseline MAE / RMSE | Original model | + shared race_progress | + per-compound race_progress |
+|---|---:|---:|---:|---:|
+| `bahrain-2024` | 1.182 / 1.427 | 1.173 / 1.407 | 0.726 / 0.909 | **0.642 / 0.817** |
+| `singapore-2023` | 1.317 / 1.599 | 1.183 / 1.464 | 0.966 / 1.245 | **1.115 / 1.420** |
+| `dutch-2023` | 2.688 / 3.872 | 2.652 / 4.370 | 3.049 / 5.190 | **2.691 / 4.379** |
+
+| Holdout | Coverage 50/80/95% (original) | Coverage 50/80/95% (per-compound fix) |
+|---|---|---|
+| `bahrain-2024` | 40% / 71% / 96% | 66% / 93% / 99% |
+| `singapore-2023` | 38% / 71% / 92% | 35% / 58% / 79% |
+| `dutch-2023` | 59% / 81% / 99% | 45% / 73% / 89% |
+
+Read honestly, not selectively: the per-compound fix is a clear win on the
+project's primary hold-out (`bahrain-2024`, MAE down 45% from the original
+model, RMSE down 42%) and still beats baseline clearly on `singapore-2023`.
+It repairs the shared-column version's `dutch-2023` regression (MAE was
+13% worse than baseline with a shared column; it is now statistically
+indistinguishable from baseline) without fully solving that hold-out's
+known difficulty — RMSE there is still worse than baseline, continuing the
+pattern already named above. It is not a uniform improvement: coverage
+calibration on `singapore-2023` is now noticeably worse than before
+(further under nominal at every level, the falsely-confident failure mode
+this project's honesty commitments care about most), a genuine cost of
+this change that is recorded here rather than left out because the
+headline accuracy numbers improved. `bahrain-2024`'s coverage moved from
+slightly under-covered to somewhat over-covered — a safer direction to err
+in, but not the calibration this project would call finished.
+
+The fitted coefficients on the full three-benchmark dataset support the
+diagnosis directly: `tyre_life_SOFT` is now +0.0115 s/lap (previously
+-0.0154), and `tyre_life_MEDIUM`/`tyre_life_HARD` are +0.036 and +0.049
+s/lap respectively — all now positive and physically ordered, consistent
+with real tyre-degradation behaviour instead of an artifact. The shared
+fuel effect recovered for dry compounds is close to -3 to -3.8 seconds
+across a full race distance (a plausible order of magnitude for F1 fuel
+burn-off), while `INTERMEDIATE`'s fuel-effect coefficient, now estimated
+from its own (limited, single-race) evidence rather than inheriting the
+dry-compound value, comes out much smaller in magnitude, as the far
+smaller sample size would suggest it should.
+
 ### Exit criterion assessment
 
 Phase 2's exit criterion is "confidence intervals are calibrated and
 performance is not worse than the best simple baseline," evaluated on this
 project's primary, documented hold-out (`bahrain-2024`, training on the two
-2023 races). On that configuration: the model beats the baseline on MAE and
-RMSE, and its 95% interval is well calibrated with a modest, documented
-under-coverage gap at the 50% and 80% levels. This is treated as meeting
-the exit criterion well enough to proceed, with the residual calibration
-gap and the changing-conditions weak spot both carried forward as named,
-tracked limitations rather than closed questions.
+2023 races). On that configuration the model now beats the baseline by a
+substantially larger margin than at the end of Phase 2 (MAE roughly halved
+relative to baseline), and its coverage, while imperfect, errs toward
+over-caution rather than false confidence. This is treated as continuing
+to meet the exit criterion, with three specific, named items carried
+forward rather than closed: the `singapore-2023` calibration regression
+introduced by this fix, `dutch-2023`'s persistent RMSE weakness, and the
+still-unimplemented heavier-tailed-likelihood refinement noted above.
 
 ## Reproducing this result
 

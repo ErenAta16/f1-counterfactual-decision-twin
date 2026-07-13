@@ -36,7 +36,7 @@ This roadmap is intentionally gated. A later stage does not start merely because
 - [x] Establish a temporal hold-out protocol
 - [x] Publish calibration and error report
 
-**Exit criterion:** confidence intervals are calibrated and performance is not worse than the best simple baseline. **Result:** after diagnosing and fixing a data issue (damp-track laps misread as normal green-flag pace, see `docs/PACE_MODEL.md`), the model beats the naive baseline on MAE/RMSE and its 95% interval is close to nominal, with a modest, documented under-coverage gap at the 50%/80% levels and a weaker result on the changing-conditions hold-out. Treated as meeting the exit criterion well enough to proceed; the residual gaps carry forward as named risks for Phase 3.
+**Exit criterion:** confidence intervals are calibrated and performance is not worse than the best simple baseline. **Result:** after diagnosing and fixing a data issue (damp-track laps misread as normal green-flag pace, see `docs/PACE_MODEL.md`), the model beat the naive baseline on MAE/RMSE with a modest, documented calibration gap. A second root-cause fix during Phase 4 (`docs/progress/05-fuel-tyre-confound-fix.md`) separated a fuel-burn/tyre-wear confound the original fix had named but not resolved, roughly halving MAE on the primary hold-out; `docs/PACE_MODEL.md`'s "Second iteration" section has the full before/after numbers, including a calibration regression on `singapore-2023` this fix introduced and did not hide.
 
 ## Phase 3 — Counterfactual simulator
 
@@ -54,7 +54,7 @@ This roadmap is intentionally gated. A later stage does not start merely because
 
 ## Phase 4 — Constrained decision engine
 
-**Status:** Complete for v1 scope; Gate D met numerically on all three benchmarks, with a named caveat
+**Status:** Complete for v1 scope; Gate D met on all three benchmarks with credible, non-degenerate winning plans
 
 **Target:** Weeks 7–8
 
@@ -64,7 +64,7 @@ This roadmap is intentionally gated. A later stage does not start merely because
 - [x] Compare expected performance and regret to baselines (statistically supported on all three benchmarks via a new paired confidence-interval check — see `docs/DECISION_ENGINE.md`)
 - [x] Decide whether Gate D supports continuation
 
-**Exit criterion:** no illegal strategies and a statistically supported advantage in the defined simulation benchmark. **Result:** met on all three benchmarks — every ranked candidate is legal by construction, and the optimiser's plan beats both fixed example baselines with a 95% confidence interval excluding zero. An unbounded first version of the search was found, during development, to exploit a known pace-model confound (tyre age vs. fuel burn-off, already named in `docs/PACE_MODEL.md`) by extrapolating a stint length far past the training data; fixed by bounding stint length to the longest one actually observed. The fixed version's winning plan still rides that bound on every benchmark, which is carried forward as a named limitation of the underlying pace model, not hidden — full detail in `docs/DECISION_ENGINE.md`.
+**Exit criterion:** no illegal strategies and a statistically supported advantage in the defined simulation benchmark. **Result:** met on all three benchmarks — every ranked candidate is legal by construction, and the optimiser's plan beats both fixed example baselines with a 95% confidence interval excluding zero. An unbounded first version of the search was found, during development, to exploit a known pace-model confound (tyre age vs. fuel burn-off, already named in `docs/PACE_MODEL.md`) by extrapolating a stint length far past the training data; an initial fix bounded stint length rather than the model, and the winning plan rode that bound on every benchmark. A follow-up root-cause fix (`docs/progress/05-fuel-tyre-confound-fix.md`) corrected the pace model itself; the optimiser's winning plans no longer touch the safety bound on two of the three benchmarks, and the third sits one lap under it — full detail, including what still doesn't fully resolve, in `docs/DECISION_ENGINE.md`.
 
 ## Phase 5 — Evidence interface
 
