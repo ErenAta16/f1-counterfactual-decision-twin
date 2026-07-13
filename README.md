@@ -28,7 +28,7 @@ This is not a live pit-wall tool and it does not claim access to team telemetry.
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e ".[dev,viz]"
-.\.venv\Scripts\python.exe -m pytest -q          # 136 tests, no network required
+.\.venv\Scripts\python.exe -m pytest -q          # 139 tests, no network required
 
 .\.venv\Scripts\apexmind.exe ingest --benchmark all --data-dir D:\apexmind-data
 .\.venv\Scripts\apexmind.exe decide --reference-benchmark bahrain-2024 --data-dir D:\apexmind-data
