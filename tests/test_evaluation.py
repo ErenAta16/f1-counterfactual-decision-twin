@@ -10,6 +10,7 @@ from apexmind.evaluation import (
     gaussian_crps,
     interval_coverage,
     mean_absolute_error,
+    metrics_by_compound_class,
     paired_mean_difference_ci,
     root_mean_squared_error,
     temporal_holdout_split,
@@ -112,3 +113,31 @@ def test_paired_mean_difference_ci_rejects_invalid_input() -> None:
         paired_mean_difference_ci(np.array([1.0]), np.array([1.0]))
     with pytest.raises(EvaluationError):
         paired_mean_difference_ci(np.array([1.0, 2.0]), np.array([1.0, 2.0]), confidence=1.5)
+
+
+def test_metrics_by_compound_class_splits_dry_from_wet() -> None:
+    # Reproduces, in miniature, the real dutch-2023 finding this function
+    # exists for: a model that is excellent on dry compounds and terrible
+    # on a compound with no training support should show that split, not
+    # bury it in one pooled number.
+    compound = pd.Series(["SOFT", "HARD", "MEDIUM", "INTERMEDIATE", "WET"])
+    y_true = np.array([0.0, 0.0, 0.0, 10.0, 12.0])
+    y_pred = np.array([0.1, -0.1, 0.0, 0.0, 0.0])  # near-perfect on dry, 0 on wet
+
+    result = metrics_by_compound_class(compound, y_true, y_pred)
+
+    assert result["dry"]["row_count"] == 3
+    assert result["dry"]["mae"] == pytest.approx(0.0667, abs=1e-3)
+    assert result["intermediate_or_wet"]["row_count"] == 2
+    assert result["intermediate_or_wet"]["mae"] == pytest.approx(11.0)
+
+
+def test_metrics_by_compound_class_omits_absent_classes() -> None:
+    compound = pd.Series(["SOFT", "SOFT", "HARD"])
+    y_true = np.array([0.0, 0.1, -0.1])
+    y_pred = np.array([0.0, 0.0, 0.0])
+
+    result = metrics_by_compound_class(compound, y_true, y_pred)
+
+    assert "dry" in result
+    assert "intermediate_or_wet" not in result

@@ -54,6 +54,40 @@ def root_mean_squared_error(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     return float(np.sqrt(np.mean((np.asarray(y_true) - np.asarray(y_pred)) ** 2)))
 
 
+WET_WEATHER_COMPOUNDS: frozenset[str] = frozenset({"INTERMEDIATE", "WET"})
+
+
+def metrics_by_compound_class(
+    compound: pd.Series, y_true: np.ndarray, y_pred: np.ndarray
+) -> dict[str, dict[str, float]]:
+    """Split MAE/RMSE into dry-compound and intermediate/wet-compound subsets.
+
+    Exists because of a concrete finding on the `dutch-2023` hold-out
+    (`docs/PACE_MODEL.md`): a single pooled RMSE can look like the model
+    is worse than baseline overall, while actually being clearly better
+    on the compounds that make up most of a race (79% of that hold-out's
+    laps) and clearly worse only on a compound with zero representation
+    in the training set for that split (`INTERMEDIATE`, 21% of laps).
+    Reporting the split rather than only the pooled number is what makes
+    that distinction visible instead of hidden inside one average.
+    """
+
+    y_true = np.asarray(y_true, dtype=float)
+    y_pred = np.asarray(y_pred, dtype=float)
+    is_dry = (~compound.isin(WET_WEATHER_COMPOUNDS)).to_numpy()
+
+    result: dict[str, dict[str, float]] = {}
+    for label, mask in (("dry", is_dry), ("intermediate_or_wet", ~is_dry)):
+        if not mask.any():
+            continue
+        result[label] = {
+            "row_count": int(mask.sum()),
+            "mae": mean_absolute_error(y_true[mask], y_pred[mask]),
+            "rmse": root_mean_squared_error(y_true[mask], y_pred[mask]),
+        }
+    return result
+
+
 def _standard_normal_cdf(z: np.ndarray) -> np.ndarray:
     return 0.5 * (1.0 + _vectorized_erf(z / math.sqrt(2.0)))
 
@@ -173,6 +207,8 @@ def write_calibration_report(
     baseline_metrics: dict[str, float],
     model_metrics: dict[str, float],
     coverage: dict[str, float],
+    baseline_metrics_by_compound_class: dict[str, dict[str, float]] | None = None,
+    model_metrics_by_compound_class: dict[str, dict[str, float]] | None = None,
 ) -> None:
     """Write the Phase 2 evaluation summary as a portable JSON record."""
 
@@ -185,6 +221,8 @@ def write_calibration_report(
         "model_metrics": model_metrics,
         "model_beats_baseline_mae": model_metrics["mae"] <= baseline_metrics["mae"],
         "coverage": coverage,
+        "baseline_metrics_by_compound_class": baseline_metrics_by_compound_class or {},
+        "model_metrics_by_compound_class": model_metrics_by_compound_class or {},
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
